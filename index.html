@@ -833,12 +833,13 @@ async function saveCash(kind, person) {
 
 /* ---------------- OWNER: SETUP ---------------- */
 async function loadLists() {
-  try { const r = await api('admin', { op: 'lists' }); if (r.ok) { S.lists = r; } } catch (e) { toast('Needs internet'); }
+  if (!S.lists) { try { S.lists = (await kvGet('lists')) || null; } catch (e) { /* ignore */ } if (S.lists && S.tab === 'setup') render(true); }
+  try { const r = await api('admin', { op: 'lists' }); if (r.ok) { S.lists = r; kvSet('lists', r).catch(() => {}); } } catch (e) { if (!S.lists) toast('Needs internet'); }
   if (S.tab === 'setup') render(true);
 }
 function setupHTML() {
   const L = S.lists;
-  if (!L) return '<div class="empty">' + (navigator.onLine ? 'Loading…' : 'Setup needs internet.') + '</div>';
+  if (!L) return '<div class="empty">' + (navigator.onLine ? 'Loading… (the first time takes a few seconds)' : 'Setup needs internet.') + '</div>';
   const base = location.href.split('#')[0].split('?')[0];
   const c = cfg();
   return '<div class="row between"><h2>Business</h2><button class="btn sm primary" data-act="editbiz">Edit</button></div><div class="card"><div class="rhead" style="margin:0"><img src="' + logoSrc() + '" alt=""><div class="grow"><b>' + esc(bizName()) + '</b><div class="small muted">' + esc([c.tagline, c.phone, c.location].filter(Boolean).join(' · ') || 'Add your logo, phone, MoMo number and colours') + '</div></div></div></div>' +
@@ -952,31 +953,48 @@ const ACT = {
     const v = { name: $('#bn').value.trim(), tagline: $('#bt').value, phone: $('#bp').value, location: $('#bl').value, momo: $('#bm').value, momoName: $('#bmn').value, bank: $('#bb').value, note: $('#bnote').value, word: $('#bw').value.trim().toLowerCase(), c1: $('#bc1').value, c2: $('#bc2').value, stock: $('#bs').value };
     if (!v.name) { toast('Enter the business name'); return; }
     const logo = S.newLogo;
-    if (await adminCall({ op: 'saveSettings', values: v }, 'Saved')) {
-      if (logo !== undefined) { const r = await api('admin', { op: 'savePhoto', name: '__logo__', data: logo }).catch(() => null); if (!r || !r.ok) toast('Saved, but the logo was not: ' + errText(r && r.error)); }
-      S.newLogo = undefined; _brand = ''; await refreshCache(); await loadPhotos(true); render(true);
-    }
+    if (S.cache) S.cache.cfg = Object.assign({}, cfg(), v);
+    if (logo !== undefined) { if (logo) S.photos.__logo__ = logo; else delete S.photos.__logo__; }
+    S.newLogo = undefined; _brand = ''; closeSheet(); render(true); toast('Saving…');
+    try {
+      const r = await api('admin', Object.assign({ op: 'saveSettings', values: v }, logo !== undefined ? { logo } : {}));
+      if (!r.ok) { toast('Not saved: ' + errText(r.error)); return; }
+      if (S.cache && r.cfg) { S.cache.cfg = r.cfg; kvSet('cache', S.cache).catch(() => {}); }
+      toast('Saved'); _brand = ''; render(true);
+      if (logo !== undefined) loadPhotos(true);
+    } catch (e) { toast('Not saved - check your internet'); }
   },
   saveprod: async () => {
     const name = $('#en').value.trim(), price = +$('#ep').value, a = $('#ea');
     if (!name || !(price >= 0) || $('#ep').value === '') { toast('Enter name and price'); return; }
-    const cat = ($('#ec') && $('#ec').value.trim()) || '', cost = +($('#eco') && $('#eco').value) || 0, photo = S.newPhoto;
-    if (await adminCall({ op: 'saveProduct', name, price, cat, cost, active: a ? a.value === '1' : true }, 'Saved')) {
-      if (photo !== undefined) { const r = await api('admin', { op: 'savePhoto', name, data: photo }).catch(() => null); if (!r || !r.ok) toast('Saved, but the picture was not: ' + errText(r && r.error)); }
-      S.newPhoto = undefined; await loadLists(); await refreshCache(); await loadPhotos(true);
-    }
+    const cat = ($('#ec') && $('#ec').value.trim()) || '', cost = +($('#eco') && $('#eco').value) || 0, photo = S.newPhoto, active = a ? a.value === '1' : true;
+    // 1. show it straight away
+    const L = S.lists, ex = L.products.find(x => kk(x.name) === kk(name)), rec = { name: ex ? ex.name : name, price, active, cat, cost };
+    if (ex) Object.assign(ex, rec); else L.products.push(rec);
+    if (photo !== undefined) { if (photo) S.photos[rec.name] = photo; else delete S.photos[rec.name]; }
+    if (S.cache && S.cache.products) { const cp = S.cache.products.filter(x => kk(x.name) !== kk(name)); if (active) cp.push({ name: rec.name, price, cat, cost }); S.cache.products = cp; }
+    S.newPhoto = undefined; closeSheet(); render(true); toast('Saving…');
+    // 2. one trip to save product + picture, then refresh quietly
+    try {
+      const r = await api('admin', Object.assign({ op: 'saveProduct', name, price, cat, cost, active }, photo !== undefined ? { photo } : {}));
+      if (!r.ok) { toast('Not saved: ' + errText(r.error)); await loadLists(); render(true); return; }
+      S.lists = r.lists; kvSet('lists', r.lists).catch(() => {}); toast('Saved'); render(true);
+      refreshCache().then(() => { if (photo !== undefined) loadPhotos(true); });
+    } catch (e) { toast('Not saved - check your internet'); }
   },
   editcust: d => editCustSheet(d.n),
   savecustadmin: async () => {
     const name = $('#en').value.trim(), a = $('#ea');
     if (!name) { toast('Enter a name'); return; }
-    if (await adminCall({ op: 'saveCustomer', name, phone: $('#ep').value, location: $('#el').value, person: $('#es').value, active: a ? a.value === '1' : true }, 'Saved')) { await loadLists(); await refreshCache(); }
+    const r = await adminCall({ op: 'saveCustomer', name, phone: $('#ep').value, location: $('#el').value, person: $('#es').value, active: a ? a.value === '1' : true }, 'Saved');
+    if (r) { if (r.lists) { S.lists = r.lists; kvSet('lists', r.lists).catch(() => {}); } render(true); refreshCache(); }
   },
   editperson: d => editPersonSheet(d.n),
   saveperson: async d => {
     const name = d.n || ($('#en') && $('#en').value.trim()), a = $('#ea'), k = $('#ek');
     if (!name) { toast('Enter a name'); return; }
-    if (await adminCall({ op: 'savePerson', name, role: $('#er').value, active: a ? a.value === '1' : true, newKey: k ? k.checked : false }, 'Saved')) { await loadLists(); }
+    const r = await adminCall({ op: 'savePerson', name, role: $('#er').value, active: a ? a.value === '1' : true, newKey: k ? k.checked : false }, 'Saved');
+    if (r) { if (r.people && S.lists) { S.lists.people = r.people; kvSet('lists', S.lists).catch(() => {}); } render(true); }
   }
 };
 async function refreshCache() { try { const b = await api('bootstrap'); if (b.ok) { S.cache = b; await kvSet('cache', b); loadPhotos(); } } catch (e) { /* ignore */ } render(true); }
