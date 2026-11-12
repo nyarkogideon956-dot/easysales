@@ -257,7 +257,7 @@
   /* ---------- sign-in time ---------- */
   function ping() {
     if (!S.session || !navigator.onLine) return;
-    try { const last = +sessionStorage.getItem('kl_ping') || 0; if (Date.now() - last < 15 * 60000) return; sessionStorage.setItem('kl_ping', String(Date.now())); } catch (e) { /* ignore */ }
+    try { const last = +sessionStorage.getItem(KL.LS ? KL.LS('ping') : 'kl_ping') || 0; if (Date.now() - last < 15 * 60000) return; sessionStorage.setItem(KL.LS ? KL.LS('ping') : 'kl_ping', String(Date.now())); } catch (e) { /* ignore */ }
     api('x', { op: 'ping' }).catch(() => { });
   }
   const _login = ACT.login;

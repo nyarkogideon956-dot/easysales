@@ -171,6 +171,10 @@ window.KL_CONFIG = { API_URL: "", BUSINESS: "My Business" };
 'use strict';
 
 const CFG = window.KL_CONFIG || {};
+// Each app gets its own storage on the phone, named after its GitHub folder (easysales, kofiphones, ...).
+// Apps on the same github.io address would otherwise share sign-in, server link and unsent sales.
+const APPNS = (location.pathname.split('/').filter(Boolean)[0] || 'app').replace(/[^A-Za-z0-9_-]/g, '');
+const LS = k => 'es_' + APPNS + '_' + k;
 const WALKIN = 'Walk-in';
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const $ = (s, r) => (r || document).querySelector(s);
@@ -242,7 +246,7 @@ function shrinkImage(file, max) {
 let _db;
 function db() {
   return _db || (_db = new Promise((res, rej) => {
-    const r = indexedDB.open('klbread', 1);
+    const r = indexedDB.open('easysales_' + APPNS, 1);
     r.onupgradeneeded = () => {
       const d = r.result;
       d.createObjectStore('kv');
@@ -278,8 +282,8 @@ const S = {
   lists: null, installEvt: null, cfg: null, photos: {}, photosVer: '', pcat: ''
 };
 
-function loadCart() { try { const c = JSON.parse(localStorage.getItem('kl_cart')); if (c && Array.isArray(c.lines)) S.cart = c; } catch (e) { /* ignore */ } }
-function saveCart() { try { localStorage.setItem('kl_cart', JSON.stringify(S.cart)); } catch (e) { /* ignore */ } }
+function loadCart() { try { const c = JSON.parse(localStorage.getItem(LS('cart'))); if (c && Array.isArray(c.lines)) S.cart = c; } catch (e) { /* ignore */ } }
+function saveCart() { try { localStorage.setItem(LS('cart'), JSON.stringify(S.cart)); } catch (e) { /* ignore */ } }
 function clearCart() { S.cart = { customer: null, lines: [], mode: 'cash', cash: '', momo: '' }; saveCart(); }
 
 /* ---------------- network ---------------- */
@@ -372,7 +376,7 @@ async function syncNow(manual) {
 
 /* ---------------- boot ---------------- */
 async function boot() {
-  S.apiUrl = localStorage.getItem('kl_api') || CFG.API_URL || '';
+  S.apiUrl = localStorage.getItem(LS('api')) || CFG.API_URL || '';
   loadCart();
   try {
     S.session = (await kvGet('session')) || null;
@@ -480,7 +484,7 @@ function banners() {
   if (S.keyBad) h += '<div class="banner warn"><span>Your access was switched off. Ask the owner.</span><button data-act="logout">Sign out</button></div>';
   if (S.update) h += '<div class="banner"><span>A new version is ready.</span><button data-act="update">Update now</button></div>';
   if (S.failed.length) h += '<div class="banner warn"><span>' + S.failed.length + ' item(s) could not be saved.</span><button data-act="tab" data-t="' + (S.session.role === 'admin' ? 'sell' : 'today') + '">See</button></div>';
-  const ios = /iphone|ipad/i.test(navigator.userAgent) && !navigator.standalone && !localStorage.getItem('kl_ios');
+  const ios = /iphone|ipad/i.test(navigator.userAgent) && !navigator.standalone && !localStorage.getItem(LS('ios'));
   if (ios) h += '<div class="banner"><span>Install: tap Share, then “Add to Home Screen”.</span><button data-act="hideios">OK</button></div>';  else if (S.installEvt) h += '<div class="banner"><span>Put ' + esc(bizName()) + ' on your home screen.</span><button data-act="install">Install</button></div>';
   return h;
 }
@@ -497,7 +501,7 @@ function loginHTML() {
 }
 async function doLogin() {
   const key = $('#lkey').value.trim(), urlEl = $('#lurl'), err = $('#lerr'), btn = $('#lbtn');
-  if (urlEl) { const u = urlEl.value.trim(); if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(u)) { err.textContent = 'That does not look like the server link.'; return; } S.apiUrl = u.split('?')[0]; localStorage.setItem('kl_api', S.apiUrl); }
+  if (urlEl) { const u = urlEl.value.trim(); if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(u)) { err.textContent = 'That does not look like the server link.'; return; } S.apiUrl = u.split('?')[0]; localStorage.setItem(LS('api'), S.apiUrl); }
   if (key.length < 4) { err.textContent = 'Please type your key.'; return; }
   btn.disabled = true; btn.textContent = 'Checking…'; err.textContent = '';
   try {
@@ -902,13 +906,13 @@ async function adminCall(body, okMsg) {
 const ACT = {
   close: () => { closeSheet(); render(true); },
   login: doLogin, logout,
-  seturl: () => { localStorage.removeItem('kl_api'); S.apiUrl = ''; render(); },
+  seturl: () => { localStorage.removeItem(LS('api')); S.apiUrl = ''; render(); },
   sync: () => syncNow(true),
   menu: () => sheet('<h2>Menu</h2><div class="stats"><div class="stat wide"><span>Signed in as</span><b style="font-size:17px">' + esc(S.session.name) + '</b></div></div><br><button class="btn block" data-act="sync2">Send & refresh now</button><br><button class="btn danger block" data-act="logout2">Sign out</button><p class="small muted">EasySales version 3 · ' + S.queue.length + ' not sent</p>'),
   sync2: () => { closeSheet(); syncNow(true); }, logout2: () => { closeSheet(); logout(); },
      tab: d => { S.tab = d.t; closeSheet(); render(); window.scrollTo(0, 0); if (d.t === 'dash' || d.t === 'cash') { if (navigator.onLine) fetchReport(); } if (d.t === 'setup' && navigator.onLine) loadLists(); if (d.t === 'history') loadHistory(); },
   update: () => { if (swReg && swReg.waiting) swReg.waiting.postMessage('SKIP'); },
-  hideios: () => { localStorage.setItem('kl_ios', '1'); render(true); },
+  hideios: () => { localStorage.setItem(LS('ios'), '1'); render(true); },
   install: async () => { if (S.installEvt) { S.installEvt.prompt(); await S.installEvt.userChoice; S.installEvt = null; render(true); } },
 
   pickcust: () => pickCustomerSheet(),
@@ -1008,7 +1012,7 @@ document.addEventListener('change', async e => {
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && $('#lkey') && document.activeElement && document.activeElement.id === 'lkey') doLogin(); });
 
 window.KL = {
-  S, ACT, ERR, ICON, api, uid, word, bizName, cfg, logoSrc, receiptImage, esc, money, r2, sum, kk, $, today, nowTime, toast, sheet, closeSheet, putOne, delOne, derived, fetchReport, refreshCache, syncSoon, errText, WALKIN,
+  S, ACT, ERR, ICON, LS, api, uid, word, bizName, cfg, logoSrc, receiptImage, esc, money, r2, sum, kk, $, today, nowTime, toast, sheet, closeSheet, putOne, delOne, derived, fetchReport, refreshCache, syncSoon, errText, WALKIN,
   fn: n => ({ render, tabsFor, historyHTML, receiptSheet, cashHTML }[n]),
   setFn: (n, f) => { if (n === 'render') render = f; else if (n === 'tabsFor') tabsFor = f; else if (n === 'historyHTML') historyHTML = f; else if (n === 'receiptSheet') receiptSheet = f; else if (n === 'cashHTML') cashHTML = f; }
 };
