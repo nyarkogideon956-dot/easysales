@@ -1,0 +1,582 @@
+/* EasySales (from KL Bread) - owner: records list, delete with confirmation, start fresh (loaded after extras2.js) */
+(function () {
+  const KL = window.KL;
+  if (!KL) return;
+  const { S, ACT, ERR, api, uid, nowTime, esc, money, $, today, WALKIN, toast, sheet, closeSheet, refreshCache, fetchReport, derived, kk, sum, r2, errText } = KL;
+  const X = KL.X || {};
+  const render = k => KL.fn('render')(k);
+  const delOne = KL.delOne;
+  Object.assign(ERR, { already_live: 'The app is already live, so it cannot be cleared again.', not_confirmed: 'Type DELETE ALL to confirm.', wrong_key: 'That owner key is not correct.' });
+
+  async function loadRecords() {
+    if (!S.session || S.session.role !== 'admin' || !navigator.onLine) return;
+    try { const r = await api('x', { op: 'records', days: 30 }); if (r.ok) S.recs = r; } catch (e) { /* ignore */ }
+    if (S.tab === 'cash') render(true);
+  }
+  function recDesc(x) {
+    if (x.kind === 'sale') return 'Sale to ' + x.customer + ' by ' + x.person + ', ' + x.date + ' ' + x.time + ' - ' + x.items.map(i => i.q + ' ' + i.p).join(', ') + ' - ' + money(x.total);
+    if (x.kind === 'pay') return 'Debt payment from ' + x.customer + ' to ' + x.person + ', ' + x.date + ' - ' + money(x.total);
+    return (x.type === 'Bank' ? 'Sent to bank' : 'Handed over by ' + x.person) + ', ' + x.date + ' - ' + money(x.total);
+  }
+  function recordsHTML() {
+    const r = S.recs;
+    let h = '<h2>Records - last 30 days</h2>';
+    if (!r) return h + '<div class="empty">' + (navigator.onLine ? 'Loading…' : 'Needs internet.') + '</div>';
+    if (!r.rows.length) h += '<div class="empty">Nothing recorded yet.</div>';
+    else h += '<div class="card" style="padding:4px 14px">' + r.rows.slice(0, 150).map(x => {
+      const top = x.kind === 'sale' ? esc(x.customer) : x.kind === 'pay' ? esc(x.customer) + ' · debt payment' : (x.type === 'Bank' ? 'Sent to bank' : 'Handover · ' + esc(x.person));
+      const sub = esc(x.date + (x.time ? ' ' + x.time : '')) + (x.kind === 'cash' ? '' : ' · ' + esc(x.person)) + (x.kind === 'sale' ? ' · ' + esc(x.items.map(i => i.q + ' ' + i.p).join(', ')) : '');
+      return '<div class="line"><div><div class="nm">' + top + ' · ' + money(x.total) + '</div><div class="small muted">' + sub + '</div></div><span style="display:flex;gap:6px">' + ((x.kind === 'pay' || (x.kind === 'cash' && x.type === 'Handover')) ? '<button class="btn sm" data-act="xeditrec" data-k="' + x.kind + '" data-id="' + esc(x.id) + '">Edit</button>' : '') + '<button class="btn sm danger" data-act="delrec" data-k="' + x.kind + '" data-id="' + esc(x.id) + '">Delete</button></span></div>';
+    }).join('') + '</div>';
+    h += '<h2>Owner tools</h2><div class="card"><button class="btn primary block" data-act="xcheck">Check my books</button><button class="btn block" style="margin-top:8px" data-act="xyear">Year history</button><button class="btn block" style="margin-top:8px" data-act="xclear" data-m="before">Start from a day…</button><button class="btn block" style="margin-top:8px" data-act="xclear" data-m="day">Delete one day…</button><button class="btn block" style="margin-top:8px" data-act="xbatches">Cleared before · Restore</button></div>';
+    h += '<h2>' + (r.live ? 'Danger zone' : 'Ready to start?') + '</h2><div class="card"><p class="small muted" style="margin-top:0">Clears all sales, payments, cash, notes and old debts. Your breads, prices and sales persons stay. A copy is kept in the Google Sheet (Cleared data). You must type your owner key and DELETE ALL.</p><button class="btn danger block" data-act="startfresh">Start fresh</button></div>';
+    return h;
+  }
+  const _cashHTML = KL.fn('cashHTML');
+  KL.setFn('cashHTML', function () { return _cashHTML() + recordsHTML(); });
+  const _tabAct = ACT.tab;
+  ACT.tab = d => { _tabAct(d); if (d.t === 'cash') loadRecords(); };
+
+  ACT.delrec = d => {
+    const x = S.recs && S.recs.rows.find(y => y.kind === d.k && y.id === d.id); if (!x) return;
+    sheet('<h2>Delete this record?</h2><p>' + esc(recDesc(x)) + '</p><p class="red small">This removes it from the Google Sheet for good. It cannot be undone' + (x.kind === 'sale' ? ' and it also removes the payment taken with this sale' : '') + '. The deletion is written in the Deleted log.</p><div class="row"><button class="btn grow" data-act="close">Cancel</button><button class="btn danger grow" data-act="dodel" data-k="' + x.kind + '" data-id="' + esc(x.id) + '">Delete permanently</button></div>');
+  };
+  ACT.dodel = async d => {
+    const x = S.recs && S.recs.rows.find(y => y.kind === d.k && y.id === d.id);
+    try {
+      const r = await api('x', { op: 'delete', kind: d.k, id: d.id, detail: x ? recDesc(x) : '' });
+      if (!r.ok) { toast(KL.errText(r.error)); return; }
+    } catch (e) { toast('Needs internet'); return; }
+    KL.closeSheet(); toast('Deleted');
+    await loadRecords(); await refreshCache(); await fetchReport(true);
+  };
+  ACT.startfresh = () => {
+    sheet('<h2 class="red">Start fresh</h2><p class="small muted">This removes all sales, payments, cash records, notes and old debts for everyone. Make sure every phone shows 0 not sent. A copy is kept in the Google Sheet, in a sheet called <b>Cleared data</b>.</p>' +
+      '<label>Customers</label><select id="sfk"><option value="0">Clear customers too</option><option value="1">Keep my customers list</option></select>' +
+      '<label>Type your owner key</label><input id="sfo" type="password" autocomplete="off">' +
+      '<label>Type DELETE ALL to confirm</label><input id="sfc" autocomplete="off">' +
+      '<label style="display:flex;gap:10px;align-items:center;margin-top:12px"><input id="sfu" type="checkbox" style="width:auto"> I understand everyone\'s records will be removed</label>' +
+      '<button class="btn danger block" id="sfgo" data-act="dostart" disabled style="margin-top:12px">Wait 5…</button>');
+    let n = 5; const t = setInterval(() => { const b = document.getElementById('sfgo'); if (!b) { clearInterval(t); return; } n--; if (n > 0) b.textContent = 'Wait ' + n + '…'; else { b.disabled = false; b.textContent = 'Delete everything now'; clearInterval(t); } }, 1000);
+  };
+  ACT.dostart = async () => {
+    const confirm = $('#sfc').value.trim(), ownerKey = $('#sfo').value.trim();
+    if (!ownerKey) { toast('Type your owner key'); return; }
+    if (confirm.toUpperCase() !== 'DELETE ALL') { toast('Type DELETE ALL to confirm'); return; }
+    if (!$('#sfu').checked) { toast('Tick the box to confirm'); return; }
+    if (!navigator.onLine) { toast('Needs internet'); return; }
+    try {
+      const r = await api('x', { op: 'startfresh', confirm, ownerKey, keepCustomers: $('#sfk').value === '1' });
+      if (!r.ok) { toast(KL.errText(r.error)); return; }
+    } catch (e) { toast('Needs internet'); return; }
+    KL.closeSheet(); toast('Done. The app is live.');
+    for (const st of ['queue', 'applied', 'failed']) { for (const o of S[st]) await delOne(st, o.id); S[st] = []; }
+    S.rep = null; S.hist = null; S.recs = null;
+    await loadRecords(); await refreshCache(); await fetchReport(true);
+  };
+
+
+  /* ---------- owner: all debts summary on the Dashboard ---------- */
+  function ownerDebts() {
+    const st = document.querySelector('main.wrap .stats'); if (!st || document.getElementById('xdebts')) return;
+    const list = derived().customers.filter(c => (c.balance || 0) > 0.004);
+    const total = r2(sum(list, c => c.balance)), by = {};
+    list.forEach(c => { const k = c.person || '(no sales person)'; (by[k] = by[k] || []).push(c); });
+    const persons = Object.keys(by).map(k => ({ name: k, rows: by[k].sort((a, b) => b.balance - a.balance), total: r2(sum(by[k], c => c.balance)) })).sort((a, b) => b.total - a.total);
+    const openAll = list.length <= 12;
+    let h = '';
+    const rp = (S.rep && S.rep.people) || [];
+    if (rp.length) {
+      const MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], gt = f => r2(sum(rp, p => p[f] || 0));
+      const num = v => money(v).replace(/^GH\S+\s*/, '');
+      const cell = (v, c) => '<span style="text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums" class="' + (c || '') + '">' + num(v) + '</span>';
+      h += '<h2 id="xdebts">Sales persons summary · ' + MONS[(S.rep.month || 1) - 1] + ' <span class="small muted">(GH₵)</span></h2><div class="card" style="padding:6px 14px;overflow-x:auto"><div style="display:grid;grid-template-columns:minmax(80px,1.2fr) repeat(3,minmax(70px,1fr));gap:6px 8px;align-items:baseline;font-size:14px;min-width:300px">' +
+        '<b class="small muted">Name</b><b class="small muted" style="text-align:right">Sales</b><b class="small muted" style="text-align:right">Debt</b><b class="small muted" style="text-align:right">Cash held</b>' +
+        rp.map(p => '<span><b>' + esc(p.name) + '</b></span>' + cell(p.sales) + cell(p.owed, p.owed > 0.004 ? 'red' : '') + cell(p.cashHeld)).join('') +
+        '<b style="border-top:1.5px solid var(--line);padding-top:8px">Total</b><b style="border-top:1.5px solid var(--line);padding-top:8px;text-align:right;white-space:nowrap">' + num(gt('sales')) + '</b><b class="red" style="border-top:1.5px solid var(--line);padding-top:8px;text-align:right;white-space:nowrap">' + num(gt('owed')) + '</b><b style="border-top:1.5px solid var(--line);padding-top:8px;text-align:right;white-space:nowrap">' + num(gt('cashHeld')) + '</b></div></div>';
+    }
+    h += '<h2>All debts · ' + money(total) + '</h2>';
+    if (!list.length) h += '<div class="card"><div class="small muted">Nobody owes you right now.</div></div>';
+    else h += '<div class="card" style="padding:4px 14px"><div class="small muted" style="padding:8px 0">' + list.length + ' customer(s) owing. Tap a name to collect payment or add an old debt.</div>' + persons.map(p =>
+      '<details' + (openAll ? ' open' : '') + ' style="border-top:1px solid var(--line)"><summary style="display:flex;justify-content:space-between;gap:10px;padding:12px 0;cursor:pointer;list-style:none"><b>' + esc(p.name) + ' <span class="small muted">(' + p.rows.length + ')</span></b><b class="red">' + money(p.total) + '</b></summary>' +
+      p.rows.map(c => '<button class="item" data-act="cust" data-n="' + esc(c.name) + '"><span class="grow"><span class="nm">' + esc(c.name) + '</span>' + (c.last ? '<br><span class="small muted">last bought ' + esc(c.last) + '</span>' : '') + '</span><span class="right"><span class="amt red">' + money(c.balance) + '</span></span></button>').join('') + '</details>').join('') + '</div>';
+    st.insertAdjacentHTML('afterend', h);
+  }
+  /* ---------- who owes me (sales person Today tab) ---------- */
+  Object.assign(ERR, { bad_amount: 'Type an amount of 0 or more.' });
+  const _render3 = KL.fn('render');
+  KL.setFn('render', function (k) {
+    _render3(k);
+    if (S.session && S.session.role === 'admin' && S.tab === 'dash') { ownerDay(); ownerDebts(); return; }
+    if (!S.session || S.session.role === 'admin' || S.tab !== 'today') return;
+    const st = document.querySelector('main.wrap .stats'); if (!st || document.getElementById('xowing')) return;
+    const me = kk(S.session.name);
+    const list = derived().customers.filter(c => kk(c.person) === me && (c.balance || 0) > 0.004).sort((a, b) => b.balance - a.balance);
+    const total = r2(sum(list, c => c.balance));
+    st.insertAdjacentHTML('afterend', closeCardHTML() + '<h2 id="xowing">Who owes me' + (list.length ? ' · ' + money(total) : '') + '</h2><div class="card" style="padding:4px 14px">' +
+      (list.length ? list.map(c => '<button class="item" data-act="cust" data-n="' + esc(c.name) + '"><span class="grow"><span class="nm">' + esc(c.name) + '</span></span><span class="right"><span class="amt red">' + money(c.balance) + '</span></span></button>').join('') : '<div class="small muted" style="padding:10px 0">Nobody owes you right now.</div>') + '</div>');
+  });
+
+  /* ---------- owner: add old debt from before the app ---------- */
+  const _cust = ACT.cust;
+  ACT.cust = d => {
+    _cust(d);
+    if (!S.session || S.session.role !== 'admin') return;
+    const sh = document.querySelector('.sheet'); if (!sh) return;
+    sh.insertAdjacentHTML('beforeend', '<button class="btn block" style="margin-top:10px" data-act="xdebt" data-n="' + esc(d.n) + '">Add old debt (from before the app)</button><button class="btn block" style="margin-top:8px" data-act="xren" data-n="' + esc(d.n) + '">Correct the name</button>');
+  };
+  ACT.xdebt = async d => {
+    if (!navigator.onLine) { toast('Needs internet'); return; }
+    let cur = 0;
+    try { const r = await api('x', { op: 'openget' }); if (r.ok) cur = r.openings[String(d.n).trim().toLowerCase()] || 0; } catch (e) { toast('Needs internet'); return; }
+    sheet('<h2>Old debt: ' + esc(d.n) + '</h2><p class="small muted">Type the total this customer owed you before you started using the app. It is added to what he owes now. Payments reduce it. Saving again replaces the old amount. Type 0 to remove it.</p>' +
+      '<label>Old debt (GH₵)</label><input id="xdamt" type="number" inputmode="decimal" min="0" value="' + (cur || '') + '" placeholder="0" style="width:100%;font:inherit;padding:12px;border:1.5px solid var(--line);border-radius:12px">' +
+      '<label style="margin-top:10px;display:block">Note (optional)</label><input id="xdnote" maxlength="200" placeholder="Example: goods taken in September" style="width:100%;font:inherit;padding:12px;border:1.5px solid var(--line);border-radius:12px">' +
+      '<button class="btn primary block" style="margin-top:12px" data-act="xdebtsave" data-n="' + esc(d.n) + '">Save old debt</button>');
+  };
+  ACT.xdebtsave = async d => {
+    const amount = +$('#xdamt').value || 0, note = $('#xdnote').value || '';
+    try {
+      const r = await api('x', { op: 'openset', customer: d.n, amount, note });
+      if (!r.ok) { toast(errText(r.error)); return; }
+      closeSheet(); toast('Saved'); await refreshCache(); S.rep = null; if (navigator.onLine) fetchReport(true); render(true);
+    } catch (e) { toast('Needs internet'); }
+  };
+
+  /* ---------- check before saving: preview + Confirm on every entry ---------- */
+  function confirmBox(title, rows, ok) {
+    const old = document.getElementById('xconf'); if (old) old.remove();
+    const ov = document.createElement('div'); ov.className = 'ov'; ov.id = 'xconf'; ov.style.zIndex = 60;
+    ov.innerHTML = '<div class="sheet" role="dialog"><h2>' + esc(title) + '</h2><p class="small muted" style="margin:0 0 8px">Check the details. Nothing is saved until you confirm.</p><div style="border:1.5px solid var(--line);border-radius:12px;padding:6px 12px">' +
+      rows.map(r => r[0] === 'html' ? r[1] : '<div class="row between" style="padding:6px 0;gap:12px;align-items:baseline"><span class="muted">' + esc(r[0]) + '</span><b class="' + (r[2] || '') + '" style="text-align:right;overflow-wrap:anywhere">' + esc(r[1]) + '</b></div>').join('') +
+      '</div><div class="row" style="margin-top:12px"><button class="btn grow" id="xconf-back">Go back</button><button class="btn primary grow" id="xconf-ok">Confirm and save</button></div></div>';
+    document.body.appendChild(ov);
+    const close = () => { ov.remove(); };
+    ov.addEventListener('click', e => { if (e.target === ov) close(); });
+    document.getElementById('xconf-back').onclick = close;
+    document.getElementById('xconf-ok').onclick = () => { close(); ok(); };
+  }
+  function guard(name, build) {
+    const orig = ACT[name]; if (!orig) return;
+    ACT[name] = function (d, a, e) {
+      let b = null;
+      try { b = build(d); } catch (err) { b = null; }
+      if (!b) return orig.call(this, d, a, e);
+      confirmBox(b.title, b.rows, () => orig.call(null, d, a, e));
+    };
+  }
+  const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  const n2 = v => r2(+v || 0);
+  const custOf = name => derived().customers.find(c => kk(c.name) === kk(name));
+
+  /* ---------- paid more than the bill: the extra goes to the old balance ---------- */
+  function saleCalc() {
+    const c = S.cart; if (!c || !c.lines.length || !c.customer) return null;
+    if (c.lines.some(l => !(l.q > 0) || l.u < 0)) return null;
+    const t = r2(sum(c.lines, l => l.q * l.u));
+    let cash = 0, momo = 0;
+    if (c.mode === 'cash') cash = t; else if (c.mode === 'momo') momo = t; else if (c.mode !== 'credit') { cash = n2(c.cash); momo = n2(c.momo); }
+    const bal = r2(t - cash - momo), cu = custOf(c.customer), before = cu && cu.balance > 0 ? cu.balance : 0;
+    const extra = bal < -0.004 ? r2(-bal) : 0, extraCash = Math.min(cash, extra), extraMomo = r2(extra - extraCash);
+    return { c, t, cash, momo, bal, cu, before, extra, extraCash, extraMomo, saleCash: r2(cash - extraCash), saleMomo: r2(momo - extraMomo),
+      okExtra: extra > 0 && kk(c.customer) !== kk(WALKIN) && extra <= before + 0.004 };
+  }
+  const _saveSaleOrig = ACT.savesale;
+  ACT.savesale = async function (d, a, e) {
+    const k = saleCalc();
+    if (!k || !k.okExtra) return _saveSaleOrig.call(this, d, a, e);
+    // save the sale for exactly its total, then record the extra as a payment on the old balance
+    k.c.mode = 'split'; k.c.cash = k.saleCash; k.c.momo = k.saleMomo;
+    const name = k.c.customer;
+    await _saveSaleOrig.call(this, d, a, e);
+    const pay = { type: 'payment', id: uid('P'), ts: Date.now() + 1, date: today(), time: nowTime(), customer: name, cash: k.extraCash, momo: k.extraMomo, person: S.session.name };
+    S.queue.push(pay); await KL.putOne('queue', pay);
+    render(true); KL.syncSoon();
+    toast('Extra ' + money(k.extra) + ' taken off his old balance');
+  };
+  guard('savesale', () => {
+    const k = saleCalc(); if (!k) return null;
+    if (k.bal < -0.004 && !k.okExtra) return null;
+    const rows = [['Customer', k.c.customer]].concat(k.c.lines.map(l => [l.q + ' × ' + l.p, money(l.q * l.u)]));
+    rows.push(['Total', money(k.t)]);
+    if (k.cash) rows.push(['Cash given', money(k.cash)]); if (k.momo) rows.push(['MoMo given', money(k.momo)]);
+    if (k.extra > 0) {
+      rows.push(['Extra paid to old balance', money(k.extra), 'green'], ['He owed before', money(k.before)], ['He will owe after', money(r2(k.before - k.extra)), r2(k.before - k.extra) > 0.004 ? 'red' : 'green']);
+    } else if (k.bal > 0.004) {
+      rows.push(['Owed on this sale', money(k.bal), 'red']);
+      if (k.before > 0.004) rows.push(['He owed before', money(k.before)], ['Total he will owe', money(r2(k.before + k.bal)), 'red']);
+    } else rows.push(['Fully paid', 'Yes', 'green']);
+    return { title: 'Check this sale', rows };
+  });
+  // explain the extra on the sell screen instead of "paid is more than the total"
+  new MutationObserver(() => {
+    const el = document.getElementById('paysum'); if (!el || el.dataset.x === '1') return;
+    if (!/Paid is more than the total/.test(el.textContent)) return;
+    const k = saleCalc(); if (!k || !k.extra) return;
+    el.dataset.x = '1';
+    el.innerHTML = k.okExtra ? '<span class="green"><b>Extra ' + money(k.extra) + ' will reduce what he owes (he owes ' + money(k.before) + ')</b></span>' : '<span class="red"><b>Paid is more than the total' + (kk(k.c.customer) === kk(WALKIN) ? '. Choose a named customer to put the extra on his balance.' : ' and more than he owes.') + '</b></span>';
+    setTimeout(() => { el.dataset.x = '0'; }, 50);
+  }).observe(document.body, { childList: true, subtree: true, characterData: true });
+  guard('savepay', d => {
+    const cash = n2(val('pc')), momo = n2(val('pm')); if (cash + momo <= 0) return null;
+    const cu = custOf(d.n), before = cu ? Math.max(0, cu.balance || 0) : 0, got = r2(cash + momo);
+    const rows = [['Customer', d.n], ['Owes now', money(before), before > 0.004 ? 'red' : '']];
+    if (cash) rows.push(['Cash received', money(cash)]); if (momo) rows.push(['MoMo received', money(momo)]);
+    rows.push(['Total received', money(got)], ['Will owe after', money(Math.max(0, r2(before - got))), r2(before - got) > 0.004 ? 'red' : 'green']);
+    if (got > before + 0.004) rows.push(['html', '<div class="small red" style="padding:6px 0">This is more than he owes. Check the amount.</div>']);
+    return { title: 'Check this payment', rows };
+  });
+  guard('savecash', d => {
+    const amount = n2(val('ca')); if (!(amount > 0)) return null;
+    const rows = [['What', d.k === 'bank' ? 'Money sent to bank' : 'Cash received from ' + d.n], ['Amount', money(amount)], ['Date', val('cd') || today()]];
+    if (val('cn').trim()) rows.push(['Note', val('cn').trim()]);
+    return { title: 'Check this entry', rows };
+  });
+  guard('savecust', () => {
+    const name = val('nn').trim().replace(/\s+/g, ' '); if (!name || kk(name) === kk(WALKIN)) return null;
+    const rows = [['Name', name]]; if (val('np').trim()) rows.push(['Phone', val('np').trim()]); if (val('nl').trim()) rows.push(['Location', val('nl').trim()]);
+    return { title: 'Check this customer', rows };
+  });
+  guard('xstocksave', d => {
+    const prods = X.stockProds || [], items = prods.map((p, i) => ({ p, out: +val('xso' + i) || 0, back: +val('xsb' + i) || 0 })).filter(i => i.out > 0 || i.back > 0);
+    if (!items.length || items.some(i => i.back > i.out)) return null;
+    return { title: 'Check the goods record', rows: [['Sales person', X.person], ['Day', d.d]].concat(items.map(i => [i.p, 'out ' + i.out + ' · back ' + i.back])) };
+  });
+  guard('xdebtsave', d => {
+    const amount = n2(val('xdamt')); const cu = custOf(d.n);
+    const rows = [['Customer', d.n], ['Old debt will be', money(amount), amount > 0 ? 'red' : '']];
+    if (val('xdnote').trim()) rows.push(['Note', val('xdnote').trim()]);
+    if (cu) rows.push(['He owes now', money(Math.max(0, cu.balance || 0))]);
+    return { title: 'Check this old debt', rows };
+  });
+  guard('xnotesave', () => {
+    const t = val('xnt').trim(); if (!t) return null;
+    return { title: 'Check your note', rows: [['html', '<div style="padding:8px 0;overflow-wrap:anywhere">' + esc(t) + '</div>']] };
+  });
+
+  /* ---------- sign-in time ---------- */
+  function ping() {
+    if (!S.session || !navigator.onLine) return;
+    try { const last = +sessionStorage.getItem('kl_ping') || 0; if (Date.now() - last < 15 * 60000) return; sessionStorage.setItem('kl_ping', String(Date.now())); } catch (e) { /* ignore */ }
+    api('x', { op: 'ping' }).catch(() => { });
+  }
+  const _login = ACT.login;
+  if (_login) ACT.login = async function (d, a, e) { const r = await _login.call(this, d, a, e); setTimeout(ping, 1500); return r; };
+  setTimeout(ping, 2500);
+
+  /* ---------- sales person: close the day (count the cash) ---------- */
+  Object.assign(ERR, { sales_only: 'Only sales persons close the day.' });
+  const CD = { data: null, loading: false, tried: false };
+  function loadClose() {
+    if (CD.loading || !navigator.onLine) return; CD.loading = true;
+    api('x', { op: 'mystatus' }).then(r => { CD.loading = false; CD.tried = true; if (r.ok) CD.data = r; if (S.tab === 'today') render(true); }).catch(() => { CD.loading = false; CD.tried = true; });
+  }
+  const diffText = d => d < -0.004 ? '<b class="red">short by ' + money(-d) + '</b>' : d > 0.004 ? '<b>extra ' + money(d) + '</b>' : '<b class="green">exact</b>';
+  function closeCardHTML() {
+    if (!CD.data && !CD.tried) loadClose();
+    const c = CD.data && CD.data.closed;
+    if (c) return '<div class="card" style="margin-top:10px"><b>Day closed at ' + esc(c.at) + '</b><div class="small" style="margin-top:4px">Counted ' + money(c.counted) + ' · should have ' + money(c.expected) + ' · ' + diffText(c.diff) + '</div><button class="btn sm" style="margin-top:8px" data-act="xclose">Count again</button></div>';
+    return '<button class="btn violet block" style="margin-top:10px" data-act="xclose">Close day · count my cash</button>';
+  }
+  ACT.xclose = async () => {
+    if (!navigator.onLine) { toast('Needs internet'); return; }
+    if (S.queue.length) { toast('Send your sales first: open the menu and tap Sync'); return; }
+    let exp = 0;
+    try { const r = await api('x', { op: 'mystatus' }); if (r.ok) { CD.data = r; exp = r.expected; } } catch (e) { toast('Needs internet'); return; }
+    sheet('<h2>Close day</h2><p class="small muted">Count all the cash in your hand. Type the amount. The app compares it with what your sales say you should have.</p>' +
+      '<div class="stats"><div class="stat violet wide"><span>You should have</span><b>' + money(exp) + '</b></div></div>' +
+      '<label>Cash I counted (GH₵)</label><input id="xcc" type="number" inputmode="decimal" min="0" placeholder="0" style="width:100%;font:inherit;padding:12px;border:1.5px solid var(--line);border-radius:12px">' +
+      '<label style="margin-top:10px;display:block">Note (optional)</label><input id="xcn" maxlength="200" placeholder="Example: goods given to a customer" style="width:100%;font:inherit;padding:12px;border:1.5px solid var(--line);border-radius:12px">' +
+      '<button class="btn primary block" style="margin-top:12px" data-act="xclosesave" data-e="' + exp + '">Close day</button>');
+  };
+  ACT.xclosesave = async d => {
+    const counted = $('#xcc').value, note = $('#xcn').value || '';
+    try {
+      const r = await api('x', { op: 'closeday', counted, note });
+      if (!r.ok) { toast(errText(r.error)); return; }
+      CD.data = { ok: true, closed: r.closed, expected: r.expected }; KL.closeSheet(); toast('Day closed at ' + r.closed.at); render(true);
+    } catch (e) { toast('Needs internet'); }
+  };
+  guard('xclosesave', d => {
+    const v = val('xcc'); if (v === '' || !(+v >= 0)) return null;
+    const exp = +d.e || 0, diff = r2(+v - exp);
+    return { title: 'Check your cash count', rows: [['You should have', money(exp)], ['You counted', money(+v)], ['Difference', diff < -0.004 ? 'short by ' + money(-diff) : diff > 0.004 ? 'extra ' + money(diff) : 'exact', diff < -0.004 ? 'red' : diff > 0.004 ? '' : 'green'], ['html', '<div class="small muted" style="padding:6px 0">The owner will see the time and the difference.</div>']] };
+  });
+
+  /* ---------- owner: day report on the Dashboard ---------- */
+  const DY = { date: null, data: null, loading: false };
+  function loadDay() {
+    if (!navigator.onLine) return; DY.loading = true; const want = DY.date;
+    api('x', { op: 'dayreport', date: want }).then(r => { DY.loading = false; if (r.ok && DY.date === want) DY.data = r; if (S.tab === 'dash') render(true); }).catch(() => { DY.loading = false; });
+  }
+  function ownerDay() {
+    const pk = document.querySelector('main.wrap .picker'); if (!pk || document.getElementById('xdaycard')) return;
+    if (!DY.date) DY.date = today();
+    if (!DY.data || DY.data.date !== DY.date) { if (!DY.loading) loadDay(); }
+    const d = DY.data && DY.data.date === DY.date ? DY.data : null;
+    let h = '<div class="card" id="xdaycard" style="margin-top:10px"><div class="row between" style="gap:10px;align-items:center"><h3 style="margin:0">Pick a day</h3><input id="xdd" type="date" value="' + esc(DY.date) + '" max="' + esc(today()) + '" style="font:inherit;padding:8px;border:1.5px solid var(--line);border-radius:10px"></div>';
+    if (!d) h += '<p class="small muted">Loading…</p>';
+    else {
+      const t = f => r2(sum(d.people, p => p[f] || 0));
+      h += '<div class="small muted" style="margin:6px 0">Total sales <b>' + money(t('sales')) + '</b> · cash ' + money(t('cash')) + ' · MoMo ' + money(t('momo')) + ' · credit ' + money(t('credit')) + ' · debts paid ' + money(t('debtIn')) + '</div>';
+      h += daySummary(d);
+      h += d.people.map(p => {
+        const seen = p.firstSeen ? 'Signed in ' + esc(p.firstSeen) + (p.lastSeen && p.lastSeen !== p.firstSeen ? ' · last seen ' + esc(p.lastSeen) : '') : 'Not seen';
+        const sales = p.firstSale ? 'Sales ' + esc(p.firstSale) + ' to ' + esc(p.lastSale) : 'No sales';
+        const cl = p.closed ? 'Closed ' + esc(p.closed.at) + ' · counted ' + money(p.closed.counted) + ' of ' + money(p.closed.expected) + ' · ' + diffText(p.closed.diff) : '<span class="muted">Day not closed</span>';
+        const det = (p.bills_ && p.bills_.length || p.pays && p.pays.length) ? '<details style="margin-top:4px"><summary class="small" style="cursor:pointer;color:var(--violet);font-weight:600">See each bill (' + p.bills_.length + ')</summary>' +
+          p.bills_.map(b => { const o = r2(b.total - b.paid); return '<button class="item" data-act="xdbill" data-p="' + esc(p.name) + '" data-id="' + esc(b.id) + '"><span class="grow"><span class="nm">' + esc(b.customer) + '</span><br><span class="small muted">' + esc(b.time) + ' · ' + esc(b.items.map(i => i.q + ' ' + i.p).join(', ')) + '</span></span><span class="right"><span class="amt">' + money(b.total) + '</span>' + (o > 0.004 ? '<br><span class="small red">owes ' + money(o) + '</span>' : '') + '</span></button>'; }).join('') +
+          (p.pays || []).map(y => '<div class="item"><span class="grow"><span class="nm">' + esc(y.customer) + '</span><br><span class="small muted">' + esc(y.time) + ' · debt payment</span></span><span class="right"><span class="amt">' + money(y.total) + '</span></span></div>').join('') + '</details>' : '';
+        return '<div style="border-top:1px solid var(--line);padding:8px 0"><div class="row between"><b>' + esc(p.name) + '</b><b>' + money(p.sales) + '</b></div><div class="small muted">' + p.bills + ' bill(s) · cash ' + money(p.cash) + ' · MoMo ' + money(p.momo) + ' · credit ' + money(p.credit) + (p.debtIn ? ' · debts paid ' + money(p.debtIn) : '') + (p.handed ? ' · handed over ' + money(p.handed) : '') + '</div><div class="small">' + seen + ' · ' + sales + '</div><div class="small">' + cl + '</div>' + det + '</div>';
+      }).join('');
+    }
+    pk.insertAdjacentHTML('afterend', h + '<button class="btn block" style="margin-top:10px" data-act="xweek">Print weekly sheets</button></div>');
+  }
+  ACT.xdbill = d => {
+    const pp = DY.data && DY.data.people.find(x => x.name === d.p), b = pp && pp.bills_.find(x => x.id === d.id); if (!b) return;
+    const sh = KL.sheet('<h2>Sale</h2>' + KL.x.billReceiptHTML({ customer: b.customer, date: DY.date, time: b.time, person: d.p, items: b.items, total: b.total, cash: b.paid, momo: 0 }) + KL.x.infoHTML(b.id));
+  };
+  document.addEventListener('change', e => { if (e.target && e.target.id === 'xdd' && e.target.value) { DY.date = e.target.value; DY.data = null; render(true); } });
+
+  /* ---------- owner: correct a customer's name ---------- */
+  Object.assign(ERR, { bad_name: 'Choose a real name.', missing_name: 'Type the new name.' });
+  ACT.xren = d => {
+    sheet('<h2>Correct the name</h2><p class="small muted">The new name replaces the old one on <b>every</b> sale and payment, and on the sales person\'s phone. The sales and money do not change. If the new name already exists, the two customers are joined into one.</p>' +
+      '<label>Name now</label><input value="' + esc(d.n) + '" disabled style="width:100%;font:inherit;padding:12px;border:1.5px solid var(--line);border-radius:12px;background:var(--lav)">' +
+      '<label style="margin-top:10px;display:block">Correct name</label><input id="xrn" value="' + esc(d.n) + '" autocomplete="off" style="width:100%;font:inherit;padding:12px;border:1.5px solid var(--line);border-radius:12px">' +
+      '<button class="btn primary block" style="margin-top:12px" data-act="xrensave" data-n="' + esc(d.n) + '">Change the name</button>');
+  };
+  ACT.xrensave = async d => {
+    const to = val('xrn').trim().replace(/\s+/g, ' ');
+    if (!to) { toast('Type the new name'); return; }
+    if (to === d.n) { toast('The name is the same'); return; }
+    if (!navigator.onLine) { toast('Needs internet'); return; }
+    try {
+      const r = await api('x', { op: 'custrename', from: d.n, to });
+      if (!r.ok) { toast(errText(r.error)); return; }
+      KL.closeSheet(); toast(r.merged ? 'Joined with ' + r.name : 'Name changed'); S.rep = null; S.hist = null; DY.data = null;
+      await refreshCache(); if (navigator.onLine) fetchReport(true); render(true);
+    } catch (e) { toast('Needs internet'); }
+  };
+  guard('xrensave', d => {
+    const to = val('xrn').trim().replace(/\s+/g, ' '); if (!to || to === d.n) return null;
+    const ex = derived().customers.some(c => kk(c.name) === kk(to) && kk(c.name) !== kk(d.n));
+    return { title: 'Check the new name', rows: [['Old name', d.n], ['New name', to, 'green'], ['html', '<div class="small ' + (ex ? 'red' : 'muted') + '" style="padding:6px 0">' + (ex ? 'A customer with this name already exists. Their sales, payments and debts will be joined into one.' : 'All past sales and payments will show the new name.') + '</div>']] };
+  });
+
+  /* ---------- owner: cash ledger (why is cash held what it is?) ---------- */
+  const _render4 = KL.fn('render');
+  KL.setFn('render', function (k) {
+    _render4(k);
+    if (!S.session || S.session.role !== 'admin' || S.tab !== 'team' || !X.person || document.getElementById('xledger')) return;
+    const st = document.querySelector('main.wrap .stats'); if (!st) return;
+    st.insertAdjacentHTML('afterend', '<button id="xledger" class="btn block" style="margin-top:8px" data-act="xledger" data-p="' + esc(X.person) + '">See how cash held is worked out</button>');
+  });
+  ACT.xledger = async d => {
+    if (!navigator.onLine) { toast('Needs internet'); return; }
+    let r; try { r = await api('x', { op: 'recon', person: d.p }); } catch (e) { toast('Needs internet'); return; }
+    if (!r.ok) { toast(errText(r.error)); return; }
+    sheet('<h2>Cash ' + esc(d.p) + ' holds</h2><p class="small muted">Cash he received (sales and debt payments) minus what he handed to you. MoMo is not cash, so it is not here. ' + (r.held < -0.004 ? '<b class="red">It is negative: he handed over more than he received. Look at the red lines.</b>' : '') + '</p>' +
+      '<div class="stats"><div class="stat violet wide"><span>Cash held now</span><b>' + money(r.held) + '</b></div></div><div style="max-height:50vh;overflow:auto;margin-top:8px">' +
+      (r.rows.length ? r.rows.slice().reverse().map(x => '<div class="item" style="gap:8px"><span class="grow"><span class="nm small">' + esc(x.what) + '</span><br><span class="small muted">' + esc(x.d + ' ' + x.t) + '</span></span><span class="right"><span class="amt ' + (x.amt < 0 ? 'red' : '') + '">' + (x.amt < 0 ? '−' : '+') + money(Math.abs(x.amt)) + '</span><br><span class="small muted">held ' + money(x.run) + '</span></span></div>').join('') : '<div class="empty">No cash yet.</div>') + '</div>');
+  };
+
+  /* ---------- stop wrong amounts ---------- */
+  const _scash = ACT.savecash;
+  ACT.savecash = function (d, a, e) {
+    if (d.k === 'handover') {
+      const amount = n2(val('ca')), row = ((S.rep && S.rep.people) || []).find(p => kk(p.name) === kk(d.n));
+      if (row && amount > (row.cashHeld || 0) + 0.004) { toast(d.n + ' only holds ' + money(Math.max(0, row.cashHeld || 0)) + '. Check the amount or the person.'); return; }
+    }
+    return _scash.call(this, d, a, e);
+  };
+  const _spay = ACT.savepay;
+  ACT.savepay = function (d, a, e) {
+    const got = r2(n2(val('pc')) + n2(val('pm'))), cu = custOf(d.n), owes = cu ? Math.max(0, cu.balance || 0) : 0;
+    if (got > owes + 0.004) { toast('He only owes ' + money(owes) + '. Type no more than that.'); return; }
+    return _spay.call(this, d, a, e);
+  };
+
+  /* ---------- owner: simple day summary ---------- */
+  function daySummary(d) {
+    const rows = d.people.filter(p => p.sales || p.cash || p.momo || p.handed || p.bills);
+    if (!rows.length) return '';
+    const tc = r2(sum(rows, p => p.cash)), tm = r2(sum(rows, p => p.momo)), th = r2(sum(rows, p => p.handed || 0)), ts = r2(sum(rows, p => p.heldEnd || 0));
+    const td = 'padding:5px 4px;text-align:right', th_ = 'padding:5px 4px;text-align:right;font-weight:600;color:var(--muted,#666)';
+    let h = '<div style="overflow-x:auto;margin:8px 0"><table style="border-collapse:collapse;width:100%;font-size:13px"><tr><td style="' + th_ + ';text-align:left">Who</td><td style="' + th_ + '">Cash</td><td style="' + th_ + '">MoMo</td><td style="' + th_ + '">Total</td><td style="' + th_ + '">Handed to you</td><td style="' + th_ + '">Still with him</td></tr>';
+    rows.forEach(p => { h += '<tr style="border-top:1px solid var(--line)"><td style="padding:5px 4px"><b>' + esc(p.name) + '</b></td><td style="' + td + '">' + money(p.cash) + '</td><td style="' + td + '">' + money(p.momo) + '</td><td style="' + td + '"><b>' + money(r2(p.cash + p.momo)) + '</b></td><td style="' + td + '">' + money(p.handed || 0) + '</td><td style="' + td + ';' + ((p.heldEnd || 0) < -0.004 ? 'color:#c0392b' : '') + '">' + money(p.heldEnd || 0) + '</td></tr>'; });
+    h += '<tr style="border-top:2px solid var(--wine,#7A1F3D)"><td style="padding:6px 4px"><b>All</b></td><td style="' + td + '"><b>' + money(tc) + '</b></td><td style="' + td + '"><b>' + money(tm) + '</b></td><td style="' + td + '"><b>' + money(r2(tc + tm)) + '</b></td><td style="' + td + '"><b>' + money(th) + '</b></td><td style="' + td + '"><b>' + money(ts) + '</b></td></tr></table></div><div class="small muted">Cash and MoMo are money received that day (sales and debt payments). "Still with him" is the cash he holds at the end of that day.</div>';
+    return h;
+  }
+
+  /* ---------- owner: edit a debt payment or a handover ---------- */
+  Object.assign(ERR, { reason_needed: 'Please write the reason.', more_than_owed: 'That would be more than the customer owes.', more_than_held: 'That would leave the sales person with negative cash.', bad_date: 'Choose a real date.', nothing_to_clear: 'There is nothing to clear for that date.', restore_latest_first: 'Restore the newest clearing first.', already_restored: 'That one was already restored.' });
+  const inp = 'width:100%;font:inherit;padding:12px;border:1.5px solid var(--line);border-radius:12px';
+  ACT.xeditrec = d => {
+    const x = S.recs && S.recs.rows.find(y => y.kind === d.k && y.id === d.id); if (!x) return;
+    if (x.kind === 'pay') {
+      sheet('<h2>Change this debt payment</h2><p class="small muted">' + esc(x.customer) + ' paid ' + esc(x.person) + ' on ' + esc(x.date) + '. The change is written in the Edit log.</p>' +
+        '<label>Cash</label><input id="ecash" type="number" inputmode="decimal" step="0.01" value="' + (x.cash || 0) + '" style="' + inp + '"><label style="margin-top:8px;display:block">MoMo</label><input id="emomo" type="number" inputmode="decimal" step="0.01" value="' + (x.momo || 0) + '" style="' + inp + '">' +
+        '<label style="margin-top:8px;display:block">Reason</label><input id="ereason" placeholder="Example: typed 250 instead of 25" style="' + inp + '"><button class="btn primary block" style="margin-top:12px" data-act="xeditsave" data-k="pay" data-id="' + esc(x.id) + '">Save change</button>');
+    } else {
+      sheet('<h2>Change this handover</h2><p class="small muted">' + esc(x.person) + ' handed over cash. The change is written in the Edit log.</p>' +
+        '<label>Amount</label><input id="eamt" type="number" inputmode="decimal" step="0.01" value="' + x.total + '" style="' + inp + '"><label style="margin-top:8px;display:block">Date</label><input id="edate" type="date" value="' + esc(x.date) + '" max="' + esc(today()) + '" style="' + inp + '">' +
+        '<label style="margin-top:8px;display:block">Reason</label><input id="ereason" placeholder="Example: he gave 200 not 300" style="' + inp + '"><button class="btn primary block" style="margin-top:12px" data-act="xeditsave" data-k="cash" data-id="' + esc(x.id) + '">Save change</button>');
+    }
+  };
+  ACT.xeditsave = async d => {
+    const reason = val('ereason').trim(); if (reason.length < 3) { toast('Write the reason'); return; }
+    if (!navigator.onLine) { toast('Needs internet'); return; }
+    const req = d.k === 'pay' ? { op: 'editpay', id: d.id, cash: n2(val('ecash')), momo: n2(val('emomo')), reason } : { op: 'edithand', id: d.id, amount: n2(val('eamt')), date: val('edate'), reason };
+    try { const r = await api('x', req); if (!r.ok) { toast(errText(r.error)); return; } } catch (e) { toast('Needs internet'); return; }
+    closeSheet(); toast('Changed'); S.rep = null; DY.data = null;
+    await loadRecords(); await refreshCache(); await fetchReport(true);
+  };
+
+  /* ---------- owner: start from a day / delete one day / restore ---------- */
+  ACT.xclear = d => {
+    const before = d.m === 'before';
+    sheet('<h2 class="red">' + (before ? 'Start from a day' : 'Delete one day') + '</h2><p class="small muted">' + (before
+      ? 'Everything <b>before</b> the day you pick is removed from the live sheets. Each customer\'s balance and the cash each sales person holds are carried forward, so the figures still tally. A safety copy is kept and you can restore it. A daily summary is kept for ever.'
+      : 'Removes <b>only</b> the sales, payments and handovers of the day you pick. Nothing is carried forward. A safety copy is kept and you can restore it.') + '</p>' +
+      '<label>' + (before ? 'Start from this day' : 'Day to delete') + '</label><input id="cld" type="date" max="' + esc(today()) + '" value="' + esc(today()) + '" style="' + inp + '">' +
+      '<button class="btn primary block" style="margin-top:12px" data-act="xclearprev" data-m="' + d.m + '">Show me what will happen</button>');
+  };
+  ACT.xclearprev = async d => {
+    const date = val('cld'); if (!date) { toast('Pick a day'); return; }
+    if (!navigator.onLine) { toast('Needs internet'); return; }
+    let r; try { r = await api('x', { op: 'clearpreview', mode: d.m, date }); } catch (e) { toast('Needs internet'); return; }
+    if (!r.ok) { toast(errText(r.error)); return; }
+    const before = d.m === 'before';
+    let h = '<h2 class="red">' + (before ? 'Start from ' : 'Delete ') + esc(date) + '</h2><div class="card"><b>' + r.bills + ' bill(s)</b>, ' + r.payments + ' payment(s) and ' + r.handovers + ' handover(s) will be removed from the live sheets.</div>';
+    if (before) {
+      h += '<div class="card"><b>Carried forward</b><div class="small muted">Customers who owe: ' + r.carryDebtCount + ' · total ' + money(r.carryDebtTotal) + '</div>' +
+        r.carryDebts.map(c => '<div class="row between small"><span>' + esc(c.name) + '</span><span class="' + (c.amount < 0 ? 'green' : '') + '">' + money(c.amount) + '</span></div>').join('') +
+        (r.carryDebtCount > r.carryDebts.length ? '<div class="small muted">and more…</div>' : '') +
+        '<div class="small muted" style="margin-top:6px">Cash held by each sales person stays the same:</div>' + r.carryCash.map(c => '<div class="row between small"><span>' + esc(c.name) + '</span><span>' + money(c.amount) + '</span></div>').join('') + '</div>';
+    }
+    h += '<label>Type your owner key</label><input id="clo" type="password" autocomplete="off" style="' + inp + '"><label style="margin-top:8px;display:block">Type CLEAR to confirm</label><input id="clc" autocomplete="off" style="' + inp + '">' +
+      '<label style="display:flex;gap:10px;align-items:center;margin-top:12px"><input id="clu" type="checkbox" style="width:auto"> Every phone shows 0 not sent</label>' +
+      '<button class="btn danger block" id="clgo" data-act="xclearrun" data-m="' + d.m + '" data-d="' + esc(date) + '" disabled style="margin-top:12px">Wait 5…</button>';
+    sheet(h);
+    let n = 5; const t = setInterval(() => { const b = document.getElementById('clgo'); if (!b) { clearInterval(t); return; } n--; if (n > 0) b.textContent = 'Wait ' + n + '…'; else { b.disabled = false; b.textContent = 'Clear now'; clearInterval(t); } }, 1000);
+  };
+  ACT.xclearrun = async d => {
+    const ownerKey = val('clo').trim(), confirm = val('clc').trim();
+    if (!ownerKey) { toast('Type your owner key'); return; }
+    if (confirm.toUpperCase() !== 'CLEAR') { toast('Type CLEAR to confirm'); return; }
+    if (!$('#clu').checked) { toast('Tick the box first'); return; }
+    if (!navigator.onLine) { toast('Needs internet'); return; }
+    try { const r = await api('x', { op: 'clearrun', mode: d.m, date: d.d, ownerKey, confirm }); if (!r.ok) { toast(errText(r.error)); return; } } catch (e) { toast('Needs internet'); return; }
+    closeSheet(); toast('Done. You can restore it from "Cleared before".');
+    S.rep = null; S.hist = null; S.recs = null; DY.data = null;
+    await loadRecords(); await refreshCache(); await fetchReport(true);
+  };
+  ACT.xbatches = async () => {
+    if (!navigator.onLine) { toast('Needs internet'); return; }
+    let r; try { r = await api('x', { op: 'batches' }); } catch (e) { toast('Needs internet'); return; }
+    if (!r.ok) { toast(errText(r.error)); return; }
+    sheet('<h2>Cleared before</h2><p class="small muted">Newest first. You can restore only the newest one that is still cleared. Older safety copies stay in the sheet called Archive.</p>' +
+      (r.batches.length ? r.batches.map(b => '<div class="card"><b>' + esc(b.mode) + ' · ' + esc(b.date) + '</b><div class="small muted">' + esc(b.at) + ' by ' + esc(b.by) + ' · ' + b.sales + ' sale lines, ' + b.payments + ' payments, ' + b.handovers + ' handovers · ' + esc(b.status) + '</div>' + (b.canRestore ? '<div style="margin-top:8px"><input id="rsk" type="password" placeholder="Owner key" autocomplete="off" style="' + inp + '"><button class="btn primary block" style="margin-top:8px" data-act="xrestore" data-id="' + esc(b.id) + '">Restore this</button></div>' : '') + '</div>').join('') : '<div class="empty">Nothing has been cleared.</div>'));
+  };
+  ACT.xrestore = async d => {
+    const ownerKey = val('rsk').trim(); if (!ownerKey) { toast('Type your owner key'); return; }
+    try { const r = await api('x', { op: 'restore', batch: d.id, ownerKey }); if (!r.ok) { toast(errText(r.error)); return; } } catch (e) { toast('Needs internet'); return; }
+    closeSheet(); toast('Restored'); S.rep = null; S.hist = null; S.recs = null; DY.data = null;
+    await loadRecords(); await refreshCache(); await fetchReport(true);
+  };
+
+  /* ---------- owner: year history ---------- */
+  const MN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  ACT.xyear = async d => {
+    if (!navigator.onLine) { toast('Needs internet'); return; }
+    const year = (d && d.y) || today().slice(0, 4);
+    let r; try { r = await api('x', { op: 'yearhist', year }); } catch (e) { toast('Needs internet'); return; }
+    if (!r.ok) { toast(errText(r.error)); return; }
+    const y = +year, c = 'padding:5px 4px;text-align:right';
+    sheet('<h2>Year ' + esc(year) + '</h2><div class="row between" style="margin-bottom:8px"><button class="btn sm" data-act="xyear" data-y="' + (y - 1) + '">‹ ' + (y - 1) + '</button><button class="btn sm" data-act="xyear" data-y="' + (y + 1) + '">' + (y + 1) + ' ›</button></div>' +
+      '<div class="stats"><div class="stat wine"><span>Total sold</span><b>' + money(r.total.sales) + '</b></div><div class="stat"><span>Cash</span><b>' + money(r.total.cash) + '</b></div><div class="stat"><span>MoMo</span><b>' + money(r.total.momo) + '</b></div><div class="stat"><span>Credit given</span><b>' + money(r.total.credit) + '</b></div><div class="stat"><span>Bills</span><b>' + r.total.bills + '</b></div><div class="stat"><span>Debts paid</span><b>' + money(r.total.debt) + '</b></div></div>' +
+      '<div style="overflow-x:auto;margin-top:8px"><table style="border-collapse:collapse;width:100%;font-size:13px"><tr><td style="padding:5px 4px;font-weight:600">Month</td><td style="' + c + ';font-weight:600">Sold</td><td style="' + c + ';font-weight:600">Cash</td><td style="' + c + ';font-weight:600">MoMo</td><td style="' + c + ';font-weight:600">Bills</td></tr>' +
+      r.months.map(m => '<tr style="border-top:1px solid var(--line);' + (m.sales || m.bills ? '' : 'opacity:.4') + '"><td style="padding:5px 4px">' + MN[m.m - 1].slice(0, 3) + '</td><td style="' + c + '">' + money(m.sales) + '</td><td style="' + c + '">' + money(m.cash) + '</td><td style="' + c + '">' + money(m.momo) + '</td><td style="' + c + '">' + m.bills + '</td></tr>').join('') + '</table></div>' +
+      (r.people.length ? '<h3>By sales person</h3>' + r.people.map(p => '<div class="row between small" style="padding:3px 0"><span>' + esc(p.name) + '</span><b>' + money(p.sales) + '</b></div>').join('') : '') +
+      '<p class="small muted">Includes the daily summaries kept after clearing, so cleared days still count.</p>');
+  };
+
+  /* ---------- owner: check my books ---------- */
+  ACT.xcheck = async () => {
+    if (!navigator.onLine) { toast('Needs internet'); return; }
+    let r; try { r = await api('x', { op: 'checkbooks' }); } catch (e) { toast('Needs internet'); return; }
+    if (!r.ok) { toast(errText(r.error)); return; }
+    KL.CHK = r.issues;
+    if (!r.issues.length) { sheet('<h2>Check my books</h2><div class="card" style="border-left:4px solid #2e7d32"><b class="green">All good.</b><div class="small muted">Cash, customer balances, bills and names all add up.</div></div>'); return; }
+    sheet('<h2>Check my books</h2><p class="small muted">' + r.issues.length + ' thing(s) to look at.</p>' + r.issues.map((x, i) => {
+      let b = '';
+      if (x.kind === 'cash') b = '<button class="btn sm" data-act="xledger" data-p="' + esc(x.person) + '">See the cash lines</button>';
+      else if (x.kind === 'customer') b = '<button class="btn sm primary" data-act="xfixcust" data-i="' + i + '">Fix: make balance 0</button>';
+      else if (x.kind === 'names') b = '<button class="btn sm primary" data-act="xren" data-n="' + esc(x.other) + '">Fix: join names</button>';
+      else if (x.kind === 'bill') b = '<button class="btn sm" data-act="xcheckgo">Open Records</button>';
+      return '<div class="card" style="border-left:4px solid var(--wine)"><div class="small">' + esc(x.text) + '</div>' + (b ? '<div style="margin-top:8px">' + b + '</div>' : '') + '</div>';
+    }).join(''));
+  };
+  ACT.xcheckgo = () => { closeSheet(); ACT.tab({ t: 'cash' }); };
+  ACT.xfixcust = async d => {
+    const x = (KL.CHK || [])[+d.i]; if (!x) return;
+    if (!confirmNow('Make ' + x.customer + ' balance 0? This adds ' + money(-x.amount) + ' to the old balance.')) return;
+    try { const r = await api('x', { op: 'openset', customer: x.customer, amount: r2((x.opening || 0) - x.amount), note: 'fix overpaid' }); if (!r.ok) { toast(errText(r.error)); return; } } catch (e) { toast('Needs internet'); return; }
+    toast('Fixed'); await refreshCache(); await fetchReport(true); ACT.xcheck();
+  };
+  const confirmNow = m => window.confirm(m);
+
+
+  /* ---------- owner: weekly printable sheets ---------- */
+  const WK = { date: null, data: null };
+  const MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], WDS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const dt = s => { const q = String(s).split('-'); return new Date(+q[0], +q[1] - 1, +q[2], 12); };
+  const dShort = s => { const d = dt(s); return WDS[d.getDay()] + ' ' + d.getDate() + ' ' + MONS[d.getMonth()]; };
+  const dFull = s => dShort(s) + ' ' + dt(s).getFullYear();
+  const shiftDay = (s, n) => { const d = dt(s); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  async function weekOpen() {
+    if (!navigator.onLine) { toast('Needs internet'); return; }
+    if (!WK.date) WK.date = shiftDay(today(), 0);
+    let r; try { r = await api('x', { op: 'weeksheet', date: WK.date }); } catch (e) { toast('Needs internet'); return; }
+    if (!r.ok) { toast(errText(r.error)); return; }
+    WK.data = r;
+    sheet('<h2>Print weekly sheets</h2><div class="row between" style="margin-bottom:8px"><button class="btn sm" data-act="xweekgo" data-n="-7">‹ Earlier</button><b style="text-align:center">Week ' + r.week + ' · ' + r.year + '<br><span class="small muted">' + esc(dShort(r.from) + ' to ' + dShort(r.to)) + '</span></b><button class="btn sm" data-act="xweekgo" data-n="7">Later ›</button></div>' +
+      '<p class="small muted">Weeks run Monday to Sunday. Week 1 is the week that has 1 January. Print before you clear old days, so you keep a paper copy.</p>' +
+      '<label>Who?</label><select id="wkp" style="' + inp + '"><option value="">All sales persons (one page each)</option>' + r.people.map(p => '<option>' + esc(p.name) + '</option>').join('') + '</select>' +
+      '<button class="btn primary block" style="margin-top:12px" data-act="xweekprint">Print</button><p class="small muted">On the phone choose Save as PDF if you have no printer.</p>');
+  }
+  ACT.xweek = () => { WK.date = today(); weekOpen(); };
+  ACT.xweekgo = d => { WK.date = shiftDay(WK.data ? WK.data.from : today(), +d.n); weekOpen(); };
+  function sheetHTML(r, p) {
+    const c = 'padding:3px 4px;text-align:right;border-bottom:1px solid #bbb', h = 'padding:3px 4px;text-align:right;border-bottom:2px solid #000;font-weight:700';
+    const no = 'W' + String(r.week).padStart(2, '0') + '-' + r.year + '-' + p.name.replace(/[^A-Za-z0-9]/g, '').slice(0, 14);
+    let o = '<div class="klpg" style="page-break-after:always;font-family:Arial,sans-serif;color:#000;font-size:11px;padding:6px">' +
+      '<div style="display:flex;justify-content:space-between;border-bottom:3px solid ' + esc((KL.cfg && KL.cfg().c1) || '#7A1F3D') + ';padding-bottom:6px"><div><div style="font-size:20px;font-weight:700;color:' + esc((KL.cfg && KL.cfg().c1) || '#7A1F3D') + '">' + esc(KL.bizName ? KL.bizName() : 'Sales') + ' · Week ' + r.week + ' · ' + r.year + '</div><div style="font-size:13px">' + esc(dFull(r.from)) + ' to ' + esc(dFull(r.to)) + '</div></div><div style="text-align:right"><div style="font-size:15px;font-weight:700">' + esc(p.name) + '</div><div>Sheet no: ' + esc(no) + '</div></div></div>' +
+      '<table style="width:100%;border-collapse:collapse;margin-top:8px"><tr><td style="' + h + ';text-align:left">Day</td><td style="' + h + '">Bills</td><td style="' + h + '">Sales</td><td style="' + h + '">Cash</td><td style="' + h + '">MoMo</td><td style="' + h + '">Credit</td><td style="' + h + '">Debts paid</td><td style="' + h + '">Handed to owner</td><td style="' + h + '">Cash held</td></tr>' +
+      p.days.map(d => '<tr><td style="' + c + ';text-align:left">' + esc(dShort(d.date)) + '</td><td style="' + c + '">' + d.bills + '</td><td style="' + c + '">' + money(d.sales) + '</td><td style="' + c + '">' + money(d.cash) + '</td><td style="' + c + '">' + money(d.momo) + '</td><td style="' + c + '">' + money(d.credit) + '</td><td style="' + c + '">' + money(d.debtIn) + '</td><td style="' + c + '">' + money(d.handed) + '</td><td style="' + c + '">' + money(d.heldEnd) + '</td></tr>').join('') +
+      '<tr style="font-weight:700"><td style="padding:4px;border-top:2px solid #000">Week total</td><td style="padding:4px;text-align:right;border-top:2px solid #000">' + p.bills + '</td><td style="padding:4px;text-align:right;border-top:2px solid #000">' + money(p.sales) + '</td><td style="padding:4px;text-align:right;border-top:2px solid #000">' + money(p.cash) + '</td><td style="padding:4px;text-align:right;border-top:2px solid #000">' + money(p.momo) + '</td><td style="padding:4px;text-align:right;border-top:2px solid #000">' + money(p.credit) + '</td><td style="padding:4px;text-align:right;border-top:2px solid #000">' + money(p.debtIn) + '</td><td style="padding:4px;text-align:right;border-top:2px solid #000">' + money(p.handed) + '</td><td style="padding:4px;text-align:right;border-top:2px solid #000">' + money(p.heldEnd) + '</td></tr></table>' +
+      '<div style="margin:8px 0;padding:6px;border:1px solid #000"><b>Cash check:</b> held at start of week ' + money(p.heldStart) + ' + cash received ' + money(p.cash) + ' − handed to owner ' + money(p.handed) + ' = <b>still with him ' + money(p.heldEnd) + '</b>. Total received (cash + MoMo): <b>' + money(r2(p.cash + p.momo)) + '</b>.</div>';
+    p.days.forEach(d => {
+      if (!d.bills_.length && !d.pays.length && !d.handed) return;
+      o += '<div style="margin-top:8px;font-weight:700;border-bottom:1px solid #000">' + esc(dShort(d.date)) + (d.closed ? ' · day closed, counted ' + money(d.closed.counted) + ' of ' + money(d.closed.expected) : '') + '</div><table style="width:100%;border-collapse:collapse">' +
+        d.bills_.map(b => { const ow = r2(b.total - b.paid); return '<tr style="page-break-inside:avoid"><td style="padding:2px 4px;width:42px">' + esc(b.time) + '</td><td style="padding:2px 4px"><b>' + esc(b.customer) + '</b> · ' + esc(b.items.map(i => i.q + ' ' + i.p + ' @' + i.u).join(', ')) + '</td><td style="padding:2px 4px;text-align:right;white-space:nowrap">' + money(b.total) + (ow > 0.004 ? ' (owes ' + money(ow) + ')' : '') + '</td></tr>'; }).join('') +
+        d.pays.map(y => '<tr><td style="padding:2px 4px">' + esc(y.time) + '</td><td style="padding:2px 4px"><b>' + esc(y.customer) + '</b> · debt payment</td><td style="padding:2px 4px;text-align:right">' + money(y.total) + '</td></tr>').join('') +
+        (d.handed ? '<tr><td></td><td style="padding:2px 4px"><b>Cash handed to owner</b></td><td style="padding:2px 4px;text-align:right">' + money(d.handed) + '</td></tr>' : '') + '</table>';
+    });
+    o += '<div style="display:flex;gap:30px;margin-top:34px"><div style="flex:1;border-top:1px solid #000;padding-top:3px">Sales person signature &amp; date</div><div style="flex:1;border-top:1px solid #000;padding-top:3px">Owner signature &amp; date</div></div><div style="margin-top:10px;font-size:9px;color:#444">Printed ' + esc(r.printedAt) + ' · KL Bread · figures are as recorded in the system at that time. Keep this sheet in the weekly file.</div></div>';
+    return o;
+  }
+  ACT.xweekprint = () => {
+    const r = WK.data; if (!r) return;
+    const who = val('wkp'), list = who ? r.people.filter(p => p.name === who) : r.people;
+    let area = document.getElementById('klprint'); if (area) area.remove();
+    area = document.createElement('div'); area.id = 'klprint'; area.innerHTML = '<style>#klprint{display:none}@media print{body>*:not(#klprint){display:none!important}#klprint{display:block!important}@page{margin:10mm}}</style>' + list.map(p => sheetHTML(r, p)).join('');
+    document.body.appendChild(area);
+    const done = () => { const a = document.getElementById('klprint'); if (a) a.remove(); window.removeEventListener('afterprint', done); };
+    window.addEventListener('afterprint', done);
+    setTimeout(() => window.print(), 150);
+  };
+
+  if (S.session) render(true);
+})();
