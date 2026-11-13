@@ -2,8 +2,8 @@
    Bump the number in VERSION whenever any app file changes. */
 // Caches are named after this app's GitHub folder, so apps on the same github.io address never delete each other's files.
 const APP = (self.location.pathname.split('/').filter(Boolean)[0] || 'app');
-const VERSION = 'es-' + APP + '-v3';
-const FILES = ['./', 'index.html', 'extras.js', 'extras2.js', 'extras3.js', 'manifest.webmanifest'];
+const VERSION = 'es-' + APP + '-v4';
+const FILES = ['./', 'index.html', 'extras.js', 'extras2.js', 'extras3.js', 'docs.js', 'manifest.webmanifest'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES.map(f => new Request(f, { cache: 'reload' })))));

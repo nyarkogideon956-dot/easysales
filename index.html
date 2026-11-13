@@ -621,7 +621,7 @@ function receiptText(b) {
   const bal = r2(b.total - b.cash - b.momo);
   return [biz + ' receipt', (b.date || today()) + ' ' + String(b.time || '').slice(0, 5), 'Customer: ' + b.customer, ''].concat(lines, ['',
     'Total: ' + money(b.total), 'Paid: ' + money(b.cash + b.momo) + (b.momo ? ' (MoMo ' + money(b.momo) + ')' : ''),
-    bal > 0.004 ? 'Balance owed: ' + money(bal) : 'Fully paid'].concat(cfg().momo ? ['', 'Pay by MoMo: ' + cfg().momo + (cfg().momoName ? ' (' + cfg().momoName + ')' : '')] : [], ['', cfg().note || 'Thank you!'])).join('\n');
+    bal > 0.004 ? 'Balance owed: ' + money(bal) : 'Fully paid'].concat(cfg().momo ? ['', 'Pay by MoMo: ' + cfg().momo + (cfg().momoName ? ' (' + cfg().momoName + ')' : '')] : [], ['', cfg().note || 'Thank you!', '', 'Powered by EasySales · 020 320 7240'])).join('\n');
 }
 function waLink(phone, text) {
   let n = String(phone || '').replace(/[^\d]/g, '');
@@ -648,7 +648,7 @@ async function receiptImage(b) {
   const c = cfg(), W = 720, pad = 40, c1 = c.c1 || '#7A1F3D';
   const total = b.total, paidAmt = r2(b.cash + b.momo), bal = r2(total - paidAmt);
   const lines = b.items.length, extra = (c.momo ? 2 : 0) + (c.bank ? 1 : 0);
-  const H = 300 + lines * 44 + 170 + extra * 36 + 90;
+  const H = 300 + lines * 44 + 170 + extra * 36 + 130;
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const g = cv.getContext('2d'), F = s => s + 'px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
   g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
@@ -674,6 +674,7 @@ async function receiptImage(b) {
   if (c.momo) { y += 50; g.fillText('Pay by MoMo: ' + c.momo, pad, y); if (c.momoName) { y += 32; g.fillText('Name: ' + c.momoName, pad, y); } }
   if (c.bank) { y += 34; g.fillText(String(c.bank).slice(0, 52), pad, y); }
   y += 54; g.textAlign = 'center'; g.fillStyle = c1; g.font = F('italic 24'); g.fillText(String(c.note || 'Thank you for your business').slice(0, 48), W / 2, y);
+  y += 40; g.fillStyle = '#9A90A6'; g.font = F(18); g.fillText('Powered by EasySales · 020 320 7240', W / 2, y);
   // the stamp
   const st = bal <= 0.004 ? ['PAID', '#1E7B4F'] : paidAmt > 0 ? ['PART PAID', '#B26A00'] : ['UNPAID', '#B3261E'];
   g.save(); g.translate(W / 2, 300 + lines * 22); g.rotate(-0.3); g.globalAlpha = 0.22; g.strokeStyle = st[1]; g.fillStyle = st[1]; g.lineWidth = 8;
@@ -1030,7 +1031,7 @@ document.addEventListener('change', async e => {
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && $('#lkey') && document.activeElement && document.activeElement.id === 'lkey') doLogin(); });
 
 window.KL = {
-  S, ACT, ERR, ICON, LS, api, uid, word, bizName, cfg, logoSrc, receiptImage, esc, money, r2, sum, kk, $, today, nowTime, toast, sheet, closeSheet, putOne, delOne, derived, fetchReport, refreshCache, syncSoon, errText, WALKIN,
+  S, ACT, ERR, ICON, LS, api, uid, word, bizName, cfg, logoSrc, receiptImage, kvGet, kvSet, esc, money, r2, sum, kk, $, today, nowTime, toast, sheet, closeSheet, putOne, delOne, derived, fetchReport, refreshCache, syncSoon, errText, WALKIN,
   fn: n => ({ render, tabsFor, historyHTML, receiptSheet, cashHTML }[n]),
   setFn: (n, f) => { if (n === 'render') render = f; else if (n === 'tabsFor') tabsFor = f; else if (n === 'historyHTML') historyHTML = f; else if (n === 'receiptSheet') receiptSheet = f; else if (n === 'cashHTML') cashHTML = f; }
 };
@@ -1040,6 +1041,7 @@ boot();
 <script src="extras.js"></script>
 <script src="extras2.js"></script>
 <script src="extras3.js"></script>
+<script src="docs.js"></script>
 </body>
 </html>
   
