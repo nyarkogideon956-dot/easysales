@@ -389,6 +389,7 @@ async function boot() {
     S.failed = await getAll('failed');
   } catch (e) { fatal('This browser cannot store data offline. Try Chrome or Safari (not private mode).'); return; }
   S.tab = S.session && S.session.role === 'admin' ? 'dash' : 'sell';
+  S.booted = true;
   render();
   registerSW();
   if (S.session) { syncNow(); }
@@ -508,7 +509,7 @@ async function doLogin() {
     const old = S.session; S.session = { key };
     const r = await api('login');
     if (!r.ok) { S.session = old; err.textContent = errText(r.error); return; }
-    S.session = { key, name: r.user.name, role: r.user.role };
+    S.session = Object.assign({ key }, r.user);
     await kvSet('session', S.session);
     S.keyBad = false; S.tab = S.session.role === 'admin' ? 'dash' : 'sell';
     const b = r.boot && r.boot.ok ? r.boot : await api('bootstrap');    if (b.ok) { S.cache = b; await kvSet('cache', b); loadPhotos(true); }
@@ -1042,6 +1043,7 @@ boot();
 <script src="extras2.js"></script>
 <script src="extras3.js"></script>
 <script src="docs.js"></script>
+<script src="biz.js"></script>
 <script src="look.js"></script>
 </body>
 </html>

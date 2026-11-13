@@ -119,9 +119,11 @@
       '<tr><td style="padding:5px 8px;color:' + mute + '">Site / location</td><td style="padding:5px 8px" colspan="3">' + esc(wb ? (doc.data.dest || doc.location || '') : (doc.location || '')) + '</td></tr></table>';
     // measured areas
     const rooms = doc.data.rooms || [];
-    if (!wb && rooms.length) h += h3('MEASURED AREAS') + '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><tr style="background:#F1F3F6"><th style="text-align:left;padding:5px 6px">Area</th><th style="text-align:left;padding:5px 6px">Type</th><th ' + th + '>Size</th><th ' + th + '>m²</th></tr>' +
-      rooms.map(r => '<tr><td ' + td + '>' + esc(r.n || 'Room') + '</td><td ' + td + '>' + (r.t === 'AC' ? 'Acoustic' : 'Plasterboard') + (r.c ? ' + cornice' : '') + '</td><td ' + tdn + '>' + (+r.l || 0) + ' x ' + (+r.w || 0) + ' m</td><td ' + tdn + '>' + r2((+r.l || 0) * (+r.w || 0)) + '</td></tr>').join('') +
-      '<tr><td colspan="3" style="padding:5px 6px;text-align:right;font-weight:700">Total area</td><td ' + tdn + '><b>' + r2(sum(rooms, r => (+r.l || 0) * (+r.w || 0))) + '</b></td></tr></table>';
+    const TY = { PB: 'Plasterboard', AC: 'Acoustic', POP: 'POP', PT: 'Partition wall' };
+    const rm = r => r.m2 !== undefined ? +r.m2 : (+r.l || 0) * (+r.w || 0), rs = r => r.size || ((+r.l || 0) + ' x ' + (+r.w || 0) + ' m');
+    if (!wb && rooms.length && c.showRooms === 'Yes') h += h3('MEASURED AREAS') + '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><tr style="background:#F1F3F6"><th style="text-align:left;padding:5px 6px">Area</th><th style="text-align:left;padding:5px 6px">Type</th><th ' + th + '>Size</th><th ' + th + '>m²</th></tr>' +
+      rooms.map(r => '<tr><td ' + td + '>' + esc(r.n || 'Room') + '</td><td ' + td + '>' + (TY[r.t] || 'Plasterboard') + (r.c ? ' + cornice' : '') + (r.ins ? ' + insulation' : '') + '</td><td ' + tdn + '>' + esc(rs(r)) + '</td><td ' + tdn + '>' + r2(rm(r)) + '</td></tr>').join('') +
+      '<tr><td colspan="3" style="padding:5px 6px;text-align:right;font-weight:700">Total area</td><td ' + tdn + '><b>' + r2(sum(rooms, rm)) + '</b></td></tr></table>';
     if (doc.title) h += '<div style="margin:12px 0 0;font-size:15px;font-weight:800;color:' + esc(c1) + ';text-transform:uppercase;letter-spacing:.4px">' + esc(doc.title) + '</div>';
     if (wb) {
       h += h3('ITEMS') + table(items, 'Qty') + '</table>' +
@@ -167,7 +169,10 @@
     if (t === 'WB' && doc.status !== 'Delivered') acts += '<button class="btn block" data-act="dStatus" data-s="Delivered">Mark delivered</button>';
     if ((t === 'EST' || t === 'PF') && doc.status !== 'Accepted') acts += '<button class="btn block" data-act="dStatus" data-s="Accepted">Mark accepted</button>';
     if (t !== 'INV') acts += '<button class="btn block" data-act="dEdit">Edit</button>';
-    sheet('<h2>' + T[t] + ' ' + esc(doc.no) + ' <span class="badge ' + st[1] + '">' + st[0] + '</span></h2>' + paperHTML(doc, false) +
+    if (KL.jobBtn) acts += KL.jobBtn(doc);
+    const rms = (doc.data.rooms || []);
+    const mine = rms.length && cfg().showRooms !== 'Yes' ? '<details class="card small" style="margin:0 0 8px"><summary><b>Your measurements</b> (the client does not see these)</summary>' + rms.map(r => '<div class="row between" style="padding:2px 0"><span>' + esc(r.n || '') + ' · ' + esc(r.t || 'PB') + (r.c ? ' + cornice' : '') + '</span><span>' + esc(r.size || '') + ' · <b>' + (r.m2 !== undefined ? r.m2 : r2((+r.l || 0) * (+r.w || 0))) + ' m²</b></span></div>').join('') + '</details>' : '';
+    sheet('<h2>' + T[t] + ' ' + esc(doc.no) + ' <span class="badge ' + st[1] + '">' + st[0] + '</span></h2>' + mine + paperHTML(doc, false) +
       '<div style="display:grid;gap:8px;margin-top:12px">' + acts +
       '<div class="row"><button class="btn grow" data-act="dPrint">Print / PDF</button><button class="btn grow" data-act="dWa">WhatsApp</button></div>' +
       (isOwner() ? '<button class="btn danger block" data-act="dDel">Delete</button>' : '') + '</div>');
@@ -210,7 +215,7 @@
         (wb ? '' : '<div class="grow"><label style="margin:0">Price</label><input data-di="u" data-n="' + n + '" type="number" inputmode="decimal" value="' + esc(i.u) + '"></div>') +
         '<button class="btn sm danger" data-act="dDelLine" data-n="' + n + '" style="align-self:flex-end" aria-label="Remove line">✕</button></div>' +
         (wb ? '' : '<label style="margin:6px 0 0;display:flex;align-items:center;gap:8px;font-weight:600"><input data-di="l" data-n="' + n + '" type="checkbox" style="width:auto;min-height:0"' + (i.l ? ' checked' : '') + '> Labour / workmanship</label>') + '</div>').join('') : '<p class="small muted">No items yet.</p>') +
-      '<div class="row" style="gap:8px"><button class="btn sm grow" data-act="dAddLine">+ Add item</button>' + (wb ? '' : '<button class="btn sm violet grow" data-act="dEstimator">Ceiling estimator</button>') + '</div>' +
+      '<div class="row" style="gap:8px"><button class="btn sm grow" data-act="dAddLine">+ Add item</button>' + (wb || (KL.hasMod && !KL.hasMod('est')) ? '' : '<button class="btn sm violet grow" data-act="dEstimator">Estimator</button>') + '</div>' +
       (wb ? '<div class="picker"><div><label>Vehicle number</label><input id="dv" value="' + esc(e.vehicle) + '" placeholder="GT 4512-22"></div><div><label>Driver (name, phone)</label><input id="dd" value="' + esc(e.driver) + '"></div></div>' :
         '<div class="card" style="padding:12px;margin-top:10px"><b>Transport, discount and tax</b>' +
         '<div class="picker"><div><label>Transport (GH₵)</label><input id="dtr" type="number" inputmode="decimal" value="' + esc(e.trans) + '" placeholder="0"></div>' +
@@ -347,22 +352,41 @@
   }
   KL.estimate = calc; // for testing
   KL.docs = { state: D, load: loadDocs, status: status, open: no => { const d = findDoc(no); if (d) viewSheet(d); } };
+  // a room or wall: rectangle, L-shape (minus the cut-out corner) or your own m²; partitions are walls (length x height, minus doors)
+  function areaOf(r) {
+    if (r.t === 'PT') return 0;
+    if (r.s === 'X') return Math.max(0, +r.a || 0);
+    const a = (+r.l || 0) * (+r.w || 0);
+    return Math.max(0, r.s === 'L' ? a - (+r.cl || 0) * (+r.cw || 0) : a);
+  }
+  function perimOf(r) { if (r.t === 'PT') return 0; return r.s === 'X' ? 4 * Math.sqrt(Math.max(0, +r.a || 0)) : 2 * ((+r.l || 0) + (+r.w || 0)); }
+  function wallOf(r, R) { const h = +r.h || +R.pt_height || 3; return Math.max(0, (+r.l || 0) * h - (Math.round(+r.d || 0)) * (+R.pt_door_w || 0.9) * (+R.pt_door_h || 2.1)); }
+  function sizeText(r, R) {
+    if (r.t === 'PT') return (+r.l || 0) + ' x ' + (+r.h || +R.pt_height || 3) + ' m' + (+r.d ? ', ' + r.d + ' door' + (+r.d === 1 ? '' : 's') : '');
+    if (r.s === 'X') return 'own m²';
+    return (+r.l || 0) + ' x ' + (+r.w || 0) + ' m' + (r.s === 'L' ? ' less ' + (+r.cl || 0) + ' x ' + (+r.cw || 0) : '');
+  }
+  const TYPE = { PB: 'Plasterboard', AC: 'Acoustic', POP: 'POP', PT: 'Partition wall' };
+  KL.estArea = areaOf;
   function calc(rooms, R, wastePb, wasteAc, lab) {
     const n = k => +R[k] || 0, out = [], add = (item, q, un) => { if (q > 0) out.push({ p: String(R[item] || item), q, un: un || 'pcs' }); };
     const L = (item, q, rate, un) => { if (q > 0 && rate > 0) out.push({ p: String(R[item] || item), q: r2(q), u: rate, un: un || 'm²', l: 1, labour: true }); };
     lab = lab || {};
-    const pb = rooms.filter(r => r.t !== 'AC'), ac = rooms.filter(r => r.t === 'AC');
-    const A = list => sum(list, r => (+r.l || 0) * (+r.w || 0)), P = list => sum(list, r => 2 * ((+r.l || 0) + (+r.w || 0)));
-    const aPb = A(pb), aAc = A(ac), pPb = P(pb), pAc = P(ac), corn = P(rooms.filter(r => r.c));
+    const of = t => rooms.filter(r => (r.t || 'PB') === t);
+    const A = list => sum(list, areaOf), P = list => sum(list, perimOf);
+    const pb = of('PB'), ac = of('AC'), pop = of('POP'), pt = of('PT');
+    const aPb = A(pb), aAc = A(ac), aPop = A(pop), pPb = P(pb), pAc = P(ac);
+    const corn = P(pb.concat(ac).filter(r => r.c)), popCorn = P(pop.filter(r => r.c));
     const wp = (wastePb === undefined ? n('pb_waste') : +wastePb) / 100, wa = (wasteAc === undefined ? n('ac_waste') : +wasteAc) / 100;
     const ceil = x => Math.ceil(r2(x) - 1e-9);
+    const sides = n('pt_sides') || 2, aPt = sum(pt, r => wallOf(r, R));
     if (aPb > 0) {
       add('pb_board_item', ceil(aPb * (1 + wp) / (n('pb_board_m2') || 2.88)));
       add('pb_main_item', ceil(aPb / (n('pb_main_space') || 1.2) / (n('pb_main_len') || 3)));
       add('pb_omega_item', ceil(aPb / (n('pb_omega_space') || 0.6) / (n('pb_omega_len') || 3)));
       add('pb_angle_item', ceil(pPb / (n('pb_angle_len') || 3)));
-      add('pb_comp_item', ceil(aPb * n('pb_comp_per_m2') / (n('pb_comp_bag') || 25)), 'bags');
     }
+    if (aPb > 0 || aPt > 0) add('pb_comp_item', ceil((aPb + aPt * sides) * n('pb_comp_per_m2') / (n('pb_comp_bag') || 25)), 'bags');
     if (corn > 0) add('cornice_item', ceil(corn / (n('cornice_len') || 2.4)));
     if (aAc > 0) {
       add('ac_tile_item', ceil(aAc * (1 + wa) / (n('ac_tile_m2') || 0.36)));
@@ -371,44 +395,116 @@
       add('ac_ct06_item', ceil(aAc * n('ac_ct06_per_m2')));
       add('ac_angle_item', ceil(pAc / (n('ac_angle_len') || 3)));
     }
+    if (aPop > 0) {
+      add('pop_item', ceil(aPop * n('pop_kg_m2') / (n('pop_bag') || 25)), 'bags');
+      add('pop_sisal_item', ceil(aPop * n('pop_sisal_m2')), 'kg');
+      add('pop_wire_item', ceil(aPop * n('pop_wire_m2')), 'kg');
+      if (popCorn > 0) add('pop_corn_item', ceil(popCorn), 'm');
+    }
+    if (aPt > 0) {
+      add('pt_sheet_item', ceil(aPt * sides * (1 + wp) / (n('pb_board_m2') || 2.88)));
+      add('pt_stud_item', sum(pt, r => { const h = +r.h || n('pt_height') || 3; return ((Math.ceil(r2((+r.l || 0) / (n('pt_stud_space') || 0.6)) - 1e-9) + 1) + Math.round(+r.d || 0) * n('pt_door_studs')) * Math.ceil(r2(h / (n('pt_stud_len') || 3)) - 1e-9); }));
+      add('pt_track_item', ceil(sum(pt, r => 2 * (+r.l || 0)) / (n('pt_track_len') || 3)));
+      const ins = sum(pt.filter(r => r.ins), r => wallOf(r, R)); if (ins > 0) add('pt_ins_item', ceil(ins / (n('pt_ins_cover') || 9.5)), 'rolls');
+    }
     const rt = k => lab[k] !== undefined && lab[k] !== '' ? +lab[k] : n(k);
     L('lab_struct_item', aPb + aAc, rt('lab_struct_rate'));
     L('lab_skim_item', aPb, rt('lab_skim_rate'));
     L('lab_ac_item', aAc, rt('lab_ac_rate'));
-    L('lab_gen_item', aPb + aAc, rt('lab_gen_rate'));
+    L('lab_gen_item', aPb + aAc + aPop, rt('lab_gen_rate'));
     if (corn > 0) L('lab_cornice_item', ceil(corn / (n('cornice_len') || 2.4)), rt('lab_cornice_rate'), 'pcs');
-    return { lines: out, areaPb: r2(aPb), areaAc: r2(aAc) };
+    L('lab_pop_item', aPop, rt('lab_pop_rate'));
+    if (popCorn > 0) L('lab_popc_item', ceil(popCorn), rt('lab_popc_rate'), 'm');
+    L('lab_pt_item', aPt, rt('lab_pt_rate'));
+    return { lines: out, areaPb: r2(aPb), areaAc: r2(aAc), areaPop: r2(aPop), areaPt: r2(aPt), area: r2(aPb + aAc + aPop) };
   }
+  const LABK = ['lab_struct_rate', 'lab_skim_rate', 'lab_ac_rate', 'lab_gen_rate', 'lab_cornice_rate', 'lab_pop_rate', 'lab_popc_rate', 'lab_pt_rate'];
   ACT.dEstimator = async () => {
     readEdit();
     const R = await getRules(); if (!R) { toast('Connect to the internet once to load the estimator rules'); return; }
-    D.est = D.est || { rooms: (D.edit.rooms && D.edit.rooms.length ? D.edit.rooms : [{ n: 'Room 1', l: '', w: '', t: 'PB', c: false }]), wp: R.pb_waste, wa: R.ac_waste, trans: D.edit.trans || '', lab: { lab_struct_rate: R.lab_struct_rate, lab_skim_rate: R.lab_skim_rate, lab_ac_rate: R.lab_ac_rate, lab_gen_rate: R.lab_gen_rate, lab_cornice_rate: R.lab_cornice_rate } };
+    const lab = {}; LABK.forEach(k => { lab[k] = R[k]; });
+    D.est = D.est || { rooms: (D.edit.rooms && D.edit.rooms.length ? D.edit.rooms.map(r => Object.assign({}, r)) : [newRoom(1, 'PB')]), wp: R.pb_waste, wa: R.ac_waste, trans: D.edit.trans || '', lab };
     estSheet();
   };
+  function newRoom(i, t) { return { n: (t === 'PT' ? 'Wall ' : 'Room ') + i, t: t || 'PB', s: 'R', l: '', w: '', cl: '', cw: '', a: '', h: '', d: '', c: false, ins: false }; }
   function readEst() {
     if (!D.est || !$('#ewp')) return;
     D.est.wp = $('#ewp').value; D.est.wa = $('#ewa').value; D.est.trans = $('#etr').value;
     document.querySelectorAll('[data-el]').forEach(el => { D.est.lab[el.dataset.el] = el.value; });
-    document.querySelectorAll('[data-er]').forEach(el => { const r = D.est.rooms[+el.dataset.n]; if (!r) return; const k = el.dataset.er; r[k] = k === 'c' ? el.checked : el.value; });
+    document.querySelectorAll('[data-er]').forEach(el => { const r = D.est.rooms[+el.dataset.n]; if (!r) return; const k = el.dataset.er; r[k] = (k === 'c' || k === 'ins') ? el.checked : el.value; });
+  }
+  document.addEventListener('change', ev => { const t = ev.target; if (D.est && t.dataset && (t.dataset.er === 't' || t.dataset.er === 's')) { readEst(); estSheet(); } });
+  function roomHTML(r, n) {
+    const f = (k, lab, ph) => '<div class="grow"><label style="margin:0">' + lab + '</label><input data-er="' + k + '" data-n="' + n + '" type="number" inputmode="decimal" value="' + esc(r[k] == null ? '' : r[k]) + '"' + (ph ? ' placeholder="' + ph + '"' : '') + '></div>';
+    const pt = r.t === 'PT';
+    let h = '<div class="card" style="padding:10px;margin:6px 0"><div class="row"><input data-er="n" data-n="' + n + '" value="' + esc(r.n) + '" class="grow" placeholder="Name"><button class="btn sm danger" data-act="eDel" data-n="' + n + '" aria-label="Remove">✕</button></div>' +
+      '<div class="row" style="margin-top:6px"><select data-er="t" data-n="' + n + '" class="grow">' + Object.keys(TYPE).map(k => '<option value="' + k + '"' + ((r.t || 'PB') === k ? ' selected' : '') + '>' + TYPE[k] + '</option>').join('') + '</select>' +
+      (pt ? '' : '<select data-er="s" data-n="' + n + '" style="width:120px"><option value="R"' + (r.s !== 'L' && r.s !== 'X' ? ' selected' : '') + '>Rectangle</option><option value="L"' + (r.s === 'L' ? ' selected' : '') + '>L-shape</option><option value="X"' + (r.s === 'X' ? ' selected' : '') + '>Own m²</option></select>') + '</div>';
+    if (pt) h += '<div class="row" style="margin-top:6px">' + f('l', 'Length (m)') + f('h', 'Height (m)', String(D.rules.pt_height || 3)) + f('d', 'Doors') + '</div><label style="margin:6px 0 0;display:flex;align-items:center;gap:6px"><input data-er="ins" data-n="' + n + '" type="checkbox" style="width:auto;min-height:0"' + (r.ins ? ' checked' : '') + '> Insulation</label>';
+    else if (r.s === 'X') h += '<div class="row" style="margin-top:6px">' + f('a', 'Area (m²)') + '</div>';
+    else h += '<div class="row" style="margin-top:6px">' + f('l', 'Length (m)') + f('w', 'Width (m)') + '</div>' + (r.s === 'L' ? '<p class="small muted" style="margin:6px 0 0">Cut-out corner (the part that is not ceiling):</p><div class="row">' + f('cl', 'Cut length') + f('cw', 'Cut width') + '</div>' : '');
+    if (!pt) h += '<label style="margin:6px 0 0;display:flex;align-items:center;gap:6px"><input data-er="c" data-n="' + n + '" type="checkbox" style="width:auto;min-height:0"' + (r.c ? ' checked' : '') + '> Cornice</label>';
+    return h + (areaOf(r) ? '<div class="small muted" style="text-align:right">' + r2(areaOf(r)) + ' m²</div>' : pt && wallOf(r, D.rules) ? '<div class="small muted" style="text-align:right">' + r2(wallOf(r, D.rules)) + ' m² wall</div>' : '') + '</div>';
   }
   function estSheet() {
     const E = D.est, R = D.rules, res = calc(E.rooms, R, E.wp, E.wa, E.lab);
-    const LB = [['lab_struct_rate', 'Structure works /m²'], ['lab_skim_rate', 'Skimming /m²'], ['lab_ac_rate', 'Acoustic fixing /m²'], ['lab_gen_rate', 'General labour /m²'], ['lab_cornice_rate', 'Cornice labour /piece']];
-    sheet('<h2>Ceiling estimator</h2><p class="small muted" style="margin-top:0">Rules come from Setup → Estimator rules.</p>' +
-      E.rooms.map((r, n) => '<div class="card" style="padding:10px;margin:6px 0"><div class="row"><input data-er="n" data-n="' + n + '" value="' + esc(r.n) + '" class="grow" placeholder="Room name"><button class="btn sm danger" data-act="eDel" data-n="' + n + '" aria-label="Remove room">✕</button></div>' +
-        '<div class="row" style="margin-top:6px"><div class="grow"><label style="margin:0">Length (m)</label><input data-er="l" data-n="' + n + '" type="number" inputmode="decimal" value="' + esc(r.l) + '"></div><div class="grow"><label style="margin:0">Width (m)</label><input data-er="w" data-n="' + n + '" type="number" inputmode="decimal" value="' + esc(r.w) + '"></div></div>' +
-        '<div class="row" style="margin-top:6px"><select data-er="t" data-n="' + n + '" class="grow"><option value="PB"' + (r.t !== 'AC' ? ' selected' : '') + '>Plasterboard</option><option value="AC"' + (r.t === 'AC' ? ' selected' : '') + '>Acoustic</option></select>' +
-        '<label style="margin:0;display:flex;align-items:center;gap:6px;white-space:nowrap"><input data-er="c" data-n="' + n + '" type="checkbox" style="width:auto;min-height:0"' + (r.c ? ' checked' : '') + '> Cornice</label></div></div>').join('') +
-      '<button class="btn sm block" data-act="eAdd">+ Add room</button>' +
+    const LB = [['lab_struct_rate', 'Structure works /m²'], ['lab_skim_rate', 'Skimming /m²'], ['lab_ac_rate', 'Acoustic fixing /m²'], ['lab_gen_rate', 'General labour /m²'], ['lab_cornice_rate', 'Cornice labour /piece'], ['lab_pop_rate', 'POP ceiling /m²'], ['lab_popc_rate', 'POP cornice /m'], ['lab_pt_rate', 'Partition works /m²']];
+    const used = t => E.rooms.some(r => (r.t || 'PB') === t);
+    const show = LB.filter(x => (x[0] === 'lab_pop_rate' || x[0] === 'lab_popc_rate') ? used('POP') : x[0] === 'lab_pt_rate' ? used('PT') : x[0] === 'lab_ac_rate' ? used('AC') : x[0] === 'lab_skim_rate' ? used('PB') : true);
+    const parts = [[res.areaPb, 'plasterboard'], [res.areaAc, 'acoustic'], [res.areaPop, 'POP'], [res.areaPt, 'partition wall']].filter(x => x[0] > 0).map(x => x[0] + ' m² ' + x[1]);
+    sheet('<h2>Estimator</h2><p class="small muted" style="margin-top:0">Ceilings, POP and partitions. Rules come from Setup → Estimator rules.</p>' +
+      E.rooms.map(roomHTML).join('') +
+      '<div class="row" style="gap:8px"><button class="btn sm grow" data-act="eAdd" data-t="">+ Add room</button><button class="btn sm grow" data-act="eAdd" data-t="PT">+ Add wall</button><button class="btn sm violet grow" data-act="ePaste">Paste sizes</button></div>' +
       '<div class="picker"><div><label>Board waste %</label><input id="ewp" type="number" inputmode="decimal" value="' + esc(E.wp) + '"></div><div><label>Tile waste %</label><input id="ewa" type="number" inputmode="decimal" value="' + esc(E.wa) + '"></div></div>' +
-      '<h3 style="margin:14px 0 0">Labour rates for this job</h3><p class="small muted" style="margin:2px 0 0">0 means no line. Defaults come from Setup.</p><div class="picker">' + LB.map(x => '<div><label>' + x[1] + '</label><input data-el="' + x[0] + '" type="number" inputmode="decimal" value="' + esc(E.lab[x[0]]) + '"></div>').join('') + '<div><label>Transport (GH₵)</label><input id="etr" type="number" inputmode="decimal" value="' + esc(E.trans) + '"></div></div>' +
+      '<h3 style="margin:14px 0 0">Labour rates for this job</h3><p class="small muted" style="margin:2px 0 0">0 means no line. Defaults come from Setup.</p><div class="picker">' + show.map(x => '<div><label>' + x[1] + '</label><input data-el="' + x[0] + '" type="number" inputmode="decimal" value="' + esc(E.lab[x[0]]) + '"></div>').join('') + '<div><label>Transport (GH₵)</label><input id="etr" type="number" inputmode="decimal" value="' + esc(E.trans) + '"></div></div>' +
       '<button class="btn block" data-act="eCalc" style="margin-top:8px">Work it out</button>' +
-      '<div class="card" style="margin-top:8px"><h3>Materials · ' + res.areaPb + ' m² plasterboard' + (res.areaAc ? ' · ' + res.areaAc + ' m² acoustic' : '') + '</h3>' +
-      (res.lines.length ? res.lines.map(i => { const pr = i.u !== undefined ? i.u : priceOf(i.p); return '<div class="row between small" style="padding:4px 0"><span>' + (i.l ? '<span class="badge">labour</span> ' : '') + esc(i.p) + '</span><span><b>' + i.q + '</b> ' + esc(i.un || '') + (pr === null ? ' <span class="badge amber">no price</span>' : '') + '</span></div>'; }).join('') : '<p class="small muted">Enter room sizes, then tap Work it out.</p>') + '</div>' +
+      '<div class="card" style="margin-top:8px"><h3>Materials' + (parts.length ? ' · ' + parts.join(' · ') : '') + '</h3>' +
+      (res.lines.length ? res.lines.map(i => { const pr = i.u !== undefined ? i.u : priceOf(i.p); return '<div class="row between small" style="padding:4px 0"><span>' + (i.l ? '<span class="badge">labour</span> ' : '') + esc(i.p) + '</span><span><b>' + i.q + '</b> ' + esc(i.un || '') + (pr === null ? ' <span class="badge amber">no price</span>' : '') + '</span></div>'; }).join('') : '<p class="small muted">Enter sizes, then tap Work it out.</p>') + '</div>' +
       '<br><button class="btn primary block" data-act="eUse"' + (res.lines.length ? '' : ' disabled') + '>Add these to the ' + T[D.edit.type].toLowerCase() + '</button>');
   }
-  ACT.eAdd = () => { readEst(); D.est.rooms.push({ n: 'Room ' + (D.est.rooms.length + 1), l: '', w: '', t: D.est.rooms.length ? D.est.rooms[D.est.rooms.length - 1].t : 'PB', c: false }); estSheet(); };
-  ACT.eDel = d => { readEst(); D.est.rooms.splice(+d.n, 1); if (!D.est.rooms.length) D.est.rooms.push({ n: 'Room 1', l: '', w: '', t: 'PB', c: false }); estSheet(); };
+  /* paste many sizes at once, one per line, e.g.
+     Living room 5 x 4 cornice | Kitchen 3x3 acoustic | Hall 6x5 L 2x2 | Bedroom 16m2 POP | Wall 4 x 3 partition 1 door insulation */
+  function parseSizes(text) {
+    const out = [];
+    String(text || '').split(/\n|;/).forEach(raw => {
+      let line = raw.replace(/(\d),(\d)/g, '$1.$2').trim(); if (!line) return;
+      const lo = line.toLowerCase(), num = '(\\d+(?:\\.\\d+)?)';
+      const t = /\bpop\b/.test(lo) ? 'POP' : /\b(ac|acoustic|t-?grid|tiles?)\b/.test(lo) ? 'AC' : /\b(pt|partition|wall|drywall)\b/.test(lo) ? 'PT' : 'PB';
+      const pairs = [...lo.matchAll(new RegExp(num + '\\s*(?:x|×|\\*|by)\\s*' + num, 'g'))].map(m => [+m[1], +m[2]]);
+      const m2 = lo.match(new RegExp(num + '\\s*(?:m2|m²|sqm|sq\\.?\\s*m|square)'));
+      const dm = lo.match(/(\d+)\s*doors?/), hm = lo.match(new RegExp('(?:\\bh|height)\\s*' + num));
+      const name = line.split(/\d/)[0].replace(/\b(pop|ac|acoustic|t-?grid|tiles?|pt|partition|drywall|pb|plasterboard|plaster|board|ceiling|cornice|with|and|l-?shape)\b/gi, '').trim().replace(/[\s\-:,]+$/, '').trim();
+      const r = newRoom(1, t); r.c = /cornice|\bcorn\b|\+\s*c\b/.test(lo); r.ins = /insul|\bins\b/.test(lo);
+      if (t === 'PT') {
+        if (pairs.length) { r.l = pairs[0][0]; r.h = pairs[0][1]; } else { const one = lo.match(new RegExp(num)); if (one) r.l = +one[1]; }
+        if (hm) r.h = +hm[1];
+        r.d = dm ? +dm[1] : /\bdoor\b/.test(lo) ? 1 : '';
+      } else if (pairs.length) {
+        r.l = pairs[0][0]; r.w = pairs[0][1];
+        if (pairs.length > 1 && /\bl\b|l-?shape|cut|less|minus/.test(lo)) { r.s = 'L'; r.cl = pairs[1][0]; r.cw = pairs[1][1]; }
+      } else if (m2) { r.s = 'X'; r.a = +m2[1]; } else return;
+      r.n = name || '';
+      out.push(r);
+    });
+    return out;
+  }
+  KL.parseSizes = parseSizes;
+  ACT.ePaste = () => { readEst(); sheet('<h2>Paste sizes</h2><p class="small muted" style="margin-top:0">One room or wall per line. Write it the way you write in your notebook. Examples:</p>' +
+    '<div class="card small" style="line-height:1.7;margin:4px 0">Living room 5 x 4 cornice<br>Kitchen 3x3 acoustic<br>Hall 6x5 L 2x2 <span class="muted">(L-shape, cut corner 2x2)</span><br>Bedroom 16m2 POP cornice<br>Wall 4 x 3 partition 1 door insulation</div>' +
+    '<textarea id="epaste" rows="8" style="width:100%;border:1.5px solid var(--line);border-radius:12px;padding:10px;font:inherit" placeholder="Paste or type here"></textarea>' +
+    '<p class="small muted">No type word = plasterboard. Words that work: acoustic, POP, partition, cornice, L, door, insulation, m2.</p>' +
+    '<div class="row"><button class="btn grow" data-act="ePasteBack">Back</button><button class="btn primary grow" data-act="ePasteGo">Add these</button></div>'); };
+  ACT.ePasteBack = () => estSheet();
+  ACT.ePasteGo = () => {
+    const list = parseSizes($('#epaste').value); if (!list.length) { toast('No sizes found. Check the examples.'); return; }
+    const E = D.est, blank = r => !+r.l && !+r.w && !+r.a;
+    E.rooms = E.rooms.filter(r => !blank(r));
+    let ci = E.rooms.filter(r => r.t !== 'PT').length, wi = E.rooms.filter(r => r.t === 'PT').length;
+    list.forEach(r => { if (!r.n) r.n = r.t === 'PT' ? 'Wall ' + (++wi) : 'Room ' + (++ci); else if (r.t === 'PT') wi++; else ci++; E.rooms.push(r); });
+    estSheet(); toast(list.length + ' added. Check them, then tap Work it out.');
+  };
+  ACT.eAdd = d => { readEst(); const last = D.est.rooms[D.est.rooms.length - 1], t = d.t || (last && last.t !== 'PT' ? last.t : 'PB'); D.est.rooms.push(newRoom(D.est.rooms.filter(r => (r.t === 'PT') === (t === 'PT')).length + 1, t)); estSheet(); };
+  ACT.eDel = d => { readEst(); D.est.rooms.splice(+d.n, 1); if (!D.est.rooms.length) D.est.rooms.push(newRoom(1, 'PB')); estSheet(); };
   ACT.eCalc = () => { readEst(); estSheet(); };
   ACT.eUse = () => {
     readEst(); const res = calc(D.est.rooms, D.rules, D.est.wp, D.est.wa, D.est.lab), e = D.edit;
@@ -418,8 +514,8 @@
     });
     e.items.sort((a, b) => (a.l ? 1 : 0) - (b.l ? 1 : 0));
     if (D.est.trans !== '') e.trans = D.est.trans;
-    e.rooms = D.est.rooms.map(r => ({ n: r.n, l: +r.l || 0, w: +r.w || 0, t: r.t, c: !!r.c }));
-    if (!e.title) { const a = r2(res.areaPb + res.areaAc); e.title = e.rooms.length + ' room' + (e.rooms.length > 1 ? 's' : '') + ' ceiling · ' + a + ' m²'; }
+    e.rooms = D.est.rooms.map(r => { const o = { n: r.n, t: r.t || 'PB', s: r.s || 'R', c: !!r.c }; ['l', 'w', 'cl', 'cw', 'a', 'h', 'd'].forEach(k => { if (+r[k]) o[k] = +r[k]; }); if (r.ins) o.ins = true; o.m2 = r2(r.t === 'PT' ? wallOf(r, D.rules) : areaOf(r)); o.size = sizeText(r, D.rules); return o; });
+    if (!e.title) { const rc = e.rooms.filter(r => r.t !== 'PT').length; const sa = cfg().showRooms === 'Yes'; e.title = rc ? rc + ' room' + (rc > 1 ? 's' : '') + ' ceiling' + (sa ? ' · ' + res.area + ' m²' : '') : 'Partition walls' + (sa ? ' · ' + res.areaPt + ' m²' : ''); }
     D.est = null; editSheet(); toast('Materials added. Check the prices, then Preview.');
   };
 
@@ -439,6 +535,7 @@
     const c = cfg();
     sheet('<h2>Document settings</h2>' +
       '<label>Use documents (estimates, invoices, waybills)?</label><select id="sdocs"><option value="Yes"' + (c.docs !== 'No' ? ' selected' : '') + '>Yes</option><option value="No"' + (c.docs === 'No' ? ' selected' : '') + '>No, hide them</option></select>' +
+      '<label>Show measured areas (room sizes) to the client?</label><select id="ssr"><option value="No"' + (c.showRooms !== 'Yes' ? ' selected' : '') + '>No, keep them for me only</option><option value="Yes"' + (c.showRooms === 'Yes' ? ' selected' : '') + '>Yes, print them</option></select>' +
       '<div class="picker"><div><label>Estimate valid (days)</label><input id="sed" type="number" value="' + esc(c.estDays || 14) + '"></div><div><label>Invoice due (days)</label><input id="sid" type="number" value="' + esc(c.invDays || 7) + '"></div></div>' +
       '<label>Estimate and pro forma terms</label><textarea id="set" rows="4" style="width:100%;border:1.5px solid var(--line);border-radius:12px;padding:10px;font:inherit">' + esc(c.estTerms || '') + '</textarea>' +
       '<div class="picker"><div><label>VAT %</label><input id="stv" type="number" inputmode="decimal" value="' + esc(c.taxVat || 15) + '"></div><div><label>NHIL %</label><input id="stn" type="number" inputmode="decimal" value="' + esc(c.taxNhil || 2.5) + '"></div><div><label>GETFund %</label><input id="stg" type="number" inputmode="decimal" value="' + esc(c.taxGet || 2.5) + '"></div><div><label>Your TIN</label><input id="sti" value="' + esc(c.tin || '') + '"></div></div>' +
@@ -447,7 +544,7 @@
       '<br><button class="btn primary block" data-act="dSettingsSave">Save</button>');
   };
   ACT.dSettingsSave = async (d, btn) => {
-    const values = { docs: $('#sdocs').value, estDays: $('#sed').value, invDays: $('#sid').value, estTerms: $('#set').value, invTerms: $('#sit').value, taxVat: $('#stv').value, taxNhil: $('#stn').value, taxGet: $('#stg').value, tin: $('#sti').value };
+    const values = { showRooms: $('#ssr').value, docs: $('#sdocs').value, estDays: $('#sed').value, invDays: $('#sid').value, estTerms: $('#set').value, invTerms: $('#sit').value, taxVat: $('#stv').value, taxNhil: $('#stn').value, taxGet: $('#stg').value, tin: $('#sti').value };
     btn.disabled = true;
     try { const r = await api('admin', { op: 'saveSettings', values }); if (!r.ok) { toast(errText(r.error)); btn.disabled = false; return; } if (S.cache && r.cfg) S.cache.cfg = r.cfg; toast('Saved'); closeSheet(); render(); } catch (e) { toast('Needs internet'); btn.disabled = false; }
   };

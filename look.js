@@ -6,7 +6,8 @@
   const { S, ACT, ICON, esc, money, r2, sum, cfg, bizName, logoSrc, sheet, closeSheet, LS, today } = KL;
   const render = k => KL.fn('render')(k);
   const isOwner = () => S.session && S.session.role === 'admin';
-  const docsOn = () => (cfg().docs || 'Yes') !== 'No' && KL.docs;
+  const has = m => !KL.hasMod || KL.hasMod(m);
+  const docsOn = () => (cfg().docs || 'Yes') !== 'No' && KL.docs && has('docs');
 
   /* ---------- Twi words (Gideon: correct any word here and send it back) ---------- */
   const TWI = {
@@ -22,7 +23,16 @@
     'Add item': 'Fa adeɛ ka ho', '+ Add item': '+ Fa adeɛ ka ho', 'Customer': 'Adetɔni', 'Phone': 'Fon',
     'Location': 'Beaeɛ', 'Note (optional)': 'Nsɛm (wopɛ a)', 'Items': 'Nneɛma', 'Nobody owes you.': 'Obiara nni wo ka.',
     'What do you want to make?': 'Deɛn na wopɛ sɛ woyɛ?', 'Ceiling estimator': 'Silin estimeta',
-    'Good morning': 'Maakye', 'Good afternoon': 'Maaha', 'Good evening': 'Maadwo'
+    'Good morning': 'Maakye', 'Good afternoon': 'Maaha', 'Good evening': 'Maadwo',
+    'Jobs': 'Adwuma', 'Money': 'Sika ho nsɛm', 'Stock': 'Nneɛma a ɛwɔ hɔ', 'Expenses': 'Ka a yɛbɔ', 'Profit': 'Mfasoɔ',
+    'Add expense': 'Kyerɛw ka', '+ Add expense': '+ Kyerɛw ka', '+ New job': '+ Adwuma foforɔ', 'New job': 'Adwuma foforɔ', 'Start job': 'Hyɛ adwuma ase',
+    'Stock in': 'Nneɛma a aba', '+ Stock in': '+ Nneɛma a aba', 'Count stock': 'Kan nneɛma', 'Running': 'Ɛrekɔ so', 'Completed': 'Awie',
+    'Not started': 'Ɛnhyɛɛ aseɛ', 'Low': 'Asua', 'left': 'aka', 'Month': 'Bosome', 'Sales': 'Nneɛma a yɛatɔn', 'Total costs': 'Ka nyinaa',
+    'Received from client': 'Sika a adetɔni de aba', 'Agreed price': 'Boɔ a yɛpenee so', 'Still to collect': 'Sika a ɛda so', 'Site notes': 'Adwumabea nsɛm',
+    'Add': 'Fa ka ho', 'Price': 'Boɔ', 'Qty': 'Dodoɔ', 'Date': 'Da', 'Amount (GH₵)': 'Sika dodoɔ (GH₵)', 'Total': 'Ne nyinaa',
+    'Paid now: cash': 'Sika a wɔatua seesei', 'Paid now: MoMo': 'MoMo a wɔatua seesei', 'Who owes you': 'Wɔn a wɔde wo ka',
+    'Labour / workmanship': 'Adwumayɛ ka', 'Discount': 'Te so', 'Transport (GH₵)': 'Lɔre ka (GH₵)', 'Transport, discount and tax': 'Lɔre, te so ne towtua',
+    'Reason for deleting': 'Deɛ enti a wopopa', 'Estimator': 'Nsusuiɛ', 'Gross profit': 'Mfasoɔ a edi kan', 'Waybill': 'Waybill', 'Customers (': 'Adetɔfoɔ ('
   };
   let lang = localStorage.getItem(LS('lang')) || 'en';
   const t = s => (lang === 'tw' && TWI[s]) || s;
@@ -122,10 +132,17 @@ html,body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif
       '<div style="background:#ECFDF3;color:#14532D"><span>' + t('Received') + '</span><b>' + money(got) + '</b></div>' +
       '<div style="background:#FFF7E6;color:#78350F"><span>' + t('On credit') + '</span><b>' + money(Math.max(0, r2(tt.sales - got))) + '</b></div>' +
       '<div style="background:#EEF2FF;color:#312E81"><span>' + t('Owed to you') + '</span><b>' + money(r ? r.owedTotal : 0) + '</b></div></div></div>';
-    const acts = [['sale', '₵', 'New sale', '#E0E7FF', '#3730A3']];
-    if (docsOn()) acts.push(['INV', '🧾', 'Invoice', '#ECFDF3', '#166534'], ['EST', '✎', 'Estimate', '#FFF7E6', '#92400E'], ['WB', '🚚', 'Waybill', '#F3E8FF', '#6B21A8']);
-    acts.push(['cash', '⇩', 'Receive cash', '#E0F2FE', '#075985']);
-    if (docsOn()) acts.push(['calc', '▦', 'Ceiling estimator', '#FCE7F3', '#9D174D']); else acts.push(['custs', '☺', 'Customers', '#FCE7F3', '#9D174D']);
+    const acts = [];
+    if (has('sell')) acts.push(['sale', '₵', 'New sale', '#E0E7FF', '#3730A3']);
+    if (docsOn()) acts.push(['INV', '🧾', 'Invoice', '#ECFDF3', '#166534'], ['EST', '✎', 'Estimate', '#FFF7E6', '#92400E']);
+    if (docsOn() && has('est')) acts.push(['calc', '▦', 'Estimator', '#FCE7F3', '#9D174D']);
+    if (has('jobs')) acts.push(['jobs', '⌂', 'Jobs', '#EDE9FE', '#5B21B6']);
+    if (has('money')) acts.push(['exp', '−', 'Add expense', '#FEE2E2', '#991B1B']);
+    if (has('stock')) acts.push(['stock', '▣', 'Stock', '#E0F2FE', '#075985']);
+    if (docsOn()) acts.push(['WB', '🚚', 'Waybill', '#F3E8FF', '#6B21A8']);
+    if (has('cash')) acts.push(['cash', '⇩', 'Receive cash', '#E0F2FE', '#075985']);
+    if (has('sell')) acts.push(['custs', '☺', 'Customers', '#FCE7F3', '#9D174D']);
+    acts.splice(6);
     h += '<div class="secth"><b>' + t('Quick actions') + '</b></div><div class="qa">' + acts.map(a => '<button data-act="qa" data-k="' + a[0] + '"><i style="background:' + a[3] + ';color:' + a[4] + '">' + a[1] + '</i>' + t(a[2]) + '</button>').join('') + '</div>';
     if (r && r.days && r.month === new Date().getMonth() + 1) {
       const d0 = new Date().getDate(), from = Math.max(1, d0 - 6), days = r.days.slice(from - 1, d0), mx = Math.max.apply(null, days.map(d => d.sales).concat([1]));
@@ -137,6 +154,7 @@ html,body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif
     if (docsOn() && KL.docs.state.list) KL.docs.state.list.filter(d => d.type === 'INV').forEach(d => { const s = KL.docs.status(d)[0], b = r2(d.total - (d.paid || 0)); if (b > 0.004 && (s === 'Overdue' || s === 'Part paid' || s === 'Unpaid')) att.push({ k: 'doc', no: d.no, i: s === 'Overdue' ? '!' : '₵', bg: s === 'Overdue' ? '#FEE2E2' : '#FFF7E6', fg: s === 'Overdue' ? '#B91C1C' : '#92400E', a: esc(d.customer) + ' · ' + esc(d.no), b: s + (d.until ? ' · due ' + esc(d.until) : ''), amt: money(b), o: s === 'Overdue' ? 0 : 1 }); });
     if (r && r.debtors) r.debtors.slice(0, 4).forEach(p => att.push({ k: 'custs', i: '₵', bg: '#FFF7E6', fg: '#92400E', a: esc(p.name), b: t('Owed to you') + (p.last ? ' · ' + esc(p.last) : ''), amt: money(p.balance), o: 2 }));
     if (r && r.people) r.people.filter(p => p.cashHeld > 0.004).forEach(p => att.push({ k: 'cash', i: '⇩', bg: '#E0F2FE', fg: '#075985', a: esc(p.name) + ' holds cash', b: t('Receive cash'), amt: money(p.cashHeld), o: 3 }));
+    if (KL.moreAttention) KL.moreAttention().forEach(x => att.push(x));
     att.sort((x, y) => x.o - y.o);
     h += '<div class="secth"><b>' + t('Needs your attention') + '</b></div><div class="card" style="padding:2px 14px">' + (att.length ? att.slice(0, 6).map(x => '<button class="att" data-act="att" data-k="' + x.k + '" data-no="' + esc(x.no || '') + '"><i style="background:' + x.bg + ';color:' + x.fg + '">' + x.i + '</i><span class="grow"><b style="font-size:14px">' + x.a + '</b><br><span class="small muted">' + x.b + '</span></span><b style="color:' + x.fg + '">' + x.amt + '</b></button>').join('') : '<div class="empty">All clear 👍</div>') + '</div>';
     return h;
@@ -147,6 +165,9 @@ html,body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif
     if (k === 'sale') return ACT.tab({ t: 'sell' });
     if (k === 'cash') return ACT.tab({ t: 'cash' });
     if (k === 'custs') return ACT.tab({ t: 'custs' });
+    if (k === 'jobs') return ACT.tab({ t: 'jobs' });
+    if (k === 'stock') return ACT.tab({ t: 'money' });
+    if (k === 'exp') return ACT.xNew({ job: '' });
     if (k === 'calc') { await newDoc('EST'); return ACT.dEstimator(); }
     if (k === 'WB') { S.tab = 'docs'; KL.docs.state.type = 'INV'; render(); await KL.docs.load(); KL.toast('Open an invoice, then tap Make waybill'); return; }
     return newDoc(k);
@@ -154,8 +175,10 @@ html,body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif
   ACT.att = d => { if (d.k === 'doc') { S.tab = 'docs'; KL.docs.state.type = 'INV'; render(); KL.docs.open(d.no); } else ACT.tab({ t: d.k }); };
   ACT.fab = () => {
     if (!isOwner()) return ACT.tab({ t: 'sell' });
-    const o = [['sale', 'New sale']];
-    if (docsOn()) o.push(['EST', 'Estimate'], ['PF', 'Pro forma'], ['INV', 'Invoice'], ['calc', 'Ceiling estimator']);
+    const o = has('sell') ? [['sale', 'New sale']] : [];
+    if (docsOn()) o.push(['EST', 'Estimate'], ['PF', 'Pro forma'], ['INV', 'Invoice']);
+    if (docsOn() && has('est')) o.push(['calc', 'Estimator']);
+    if (has('money')) o.push(['exp', 'Add expense']);
     sheet('<h2>' + t('What do you want to make?') + '</h2><div style="display:grid;gap:8px">' + o.map(x => '<button class="btn block' + (x[0] === 'sale' ? ' primary' : '') + '" data-act="qa" data-k="' + x[0] + '">' + t(x[1]) + '</button>').join('') + '</div>');
   };
   render(true);
