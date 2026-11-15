@@ -25,7 +25,12 @@
     if (!isOwner()) return;
     const m = document.querySelector('main.wrap'); if (!m) return;
     if (S.tab === 'docs') m.innerHTML = docsHTML();
-    if (S.tab === 'setup' && !document.getElementById('xdocset')) m.insertAdjacentHTML('afterbegin', '<div id="xdocset" class="row" style="gap:8px;margin-top:6px"><button class="btn sm grow" data-act="dRules">Estimator rules</button><button class="btn sm grow" data-act="dSettings">Document settings</button></div>');
+    if (S.tab === 'setup' && !document.getElementById('xdocset')) {
+      // only show these when the shop has estimates / the estimator switched on
+      const hm = x => !KL.hasMod || KL.hasMod(x);
+      const bt = (hm('est') ? '<button class="btn sm grow" data-act="dRules">Estimator rules</button>' : '') + (hm('docs') ? '<button class="btn sm grow" data-act="dSettings">Document settings</button>' : '');
+      if (bt) m.insertAdjacentHTML('afterbegin', '<div id="xdocset" class="row" style="gap:8px;margin-top:6px">' + bt + '</div>');
+    }
   });
   const _tab = ACT.tab;
   ACT.tab = d => { _tab(d); if (d.t === 'docs') loadDocs(); };
