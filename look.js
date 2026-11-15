@@ -32,7 +32,7 @@
     'Add': 'Fa ka ho', 'Price': 'Boɔ', 'Qty': 'Dodoɔ', 'Date': 'Da', 'Amount (GH₵)': 'Sika dodoɔ (GH₵)', 'Total': 'Ne nyinaa',
     'Paid now: cash': 'Sika a wɔatua seesei', 'Paid now: MoMo': 'MoMo a wɔatua seesei', 'Who owes you': 'Wɔn a wɔde wo ka',
     'Labour / workmanship': 'Adwumayɛ ka', 'Discount': 'Te so', 'Transport (GH₵)': 'Lɔre ka (GH₵)', 'Transport, discount and tax': 'Lɔre, te so ne towtua',
-    'Reason for deleting': 'Deɛ enti a wopopa', 'Estimator': 'Nsusuiɛ', 'Gross profit': 'Mfasoɔ a edi kan', 'Waybill': 'Waybill', 'Customers (': 'Adetɔfoɔ ('
+    'Reason for deleting': 'Deɛ enti a wopopa', 'Estimator': 'Nsusuiɛ', 'Gross profit': 'Mfasoɔ a edi kan', 'Waybill': 'Waybill', 'Job cards': 'Adwuma nkrataa', 'Job card': 'Adwuma krataa', 'Ready': 'Ayɛ krado', 'Collected': 'Wɔafa', 'Fixing': 'Yɛresiesie', 'Sewing': 'Yɛrepam', 'Working on': 'Yɛreyɛ', 'Customers (': 'Adetɔfoɔ ('
   };
   let lang = localStorage.getItem(LS('lang')) || 'en';
   const t = s => (lang === 'tw' && TWI[s]) || s;
@@ -115,7 +115,9 @@ html,body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif
     if (nav) { const h = nav.querySelector('[data-t=dash]'); if (h) h.innerHTML = ICON.home + 'Home'; }
     const main = document.querySelector('main.wrap');
     if (main && S.tab === 'dash' && isOwner()) {
-      main.insertAdjacentHTML('afterbegin', homeHTML() + '<div class="secth"><b>Reports</b></div>');
+      const hh = c => !KL.homeHas || KL.homeHas(c);
+      if (hh('reports')) main.insertAdjacentHTML('afterbegin', homeHTML() + '<div class="secth"><b>Reports</b></div>');
+      else main.innerHTML = homeHTML() + '<div style="height:90px"></div>';
       if (docsOn() && !KL.docs.state.list && navigator.onLine && !KL.docs._asked) { KL.docs._asked = 1; KL.docs.load().then(() => { if (S.tab === 'dash') render(true); }); }
     }
     if (main && (S.tab === 'dash' || S.tab === 'today') && !document.querySelector('.fab')) document.body.insertAdjacentHTML('beforeend', '<button class="fab" data-act="fab" aria-label="New sale or document">+</button>');
@@ -128,7 +130,9 @@ html,body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif
   function homeHTML() {
     const r = S.rep, tt = r ? r.todayTotals : { sales: 0, cash: 0, momo: 0 }, got = r2(tt.cash + tt.momo);
     let h = '<div class="hero"><small>' + t(greet()) + ', ' + esc(S.session.name) + '</small><h1>' + esc(bizName()) + '</h1></div>';
-    h += '<div class="sumc"><div class="small muted" style="font-weight:600">' + t('Sales today') + '</div><div class="big">' + money(tt.sales) + '</div><div class="tri">' +
+    const hh = c => !KL.homeHas || KL.homeHas(c);
+    if (!hh('today')) h = h.replace('<div class="hero">', '<div class="hero" style="padding-bottom:18px">');
+    if (hh('today')) h += '<div class="sumc"><div class="small muted" style="font-weight:600">' + t('Sales today') + '</div><div class="big">' + money(tt.sales) + '</div><div class="tri">' +
       '<div style="background:#ECFDF3;color:#14532D"><span>' + t('Received') + '</span><b>' + money(got) + '</b></div>' +
       '<div style="background:#FFF7E6;color:#78350F"><span>' + t('On credit') + '</span><b>' + money(Math.max(0, r2(tt.sales - got))) + '</b></div>' +
       '<div style="background:#EEF2FF;color:#312E81"><span>' + t('Owed to you') + '</span><b>' + money(r ? r.owedTotal : 0) + '</b></div></div></div>';
@@ -142,9 +146,11 @@ html,body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif
     if (docsOn()) acts.push(['WB', '🚚', 'Waybill', '#F3E8FF', '#6B21A8']);
     if (has('cash')) acts.push(['cash', '⇩', 'Receive cash', '#E0F2FE', '#075985']);
     if (has('sell')) acts.push(['custs', '☺', 'Customers', '#FCE7F3', '#9D174D']);
+    if (has('cards')) acts.unshift(['cards', '✚', 'Job card', '#DCFCE7', '#166534']);
     acts.splice(6);
-    h += '<div class="secth"><b>' + t('Quick actions') + '</b></div><div class="qa">' + acts.map(a => '<button data-act="qa" data-k="' + a[0] + '"><i style="background:' + a[3] + ';color:' + a[4] + '">' + a[1] + '</i>' + t(a[2]) + '</button>').join('') + '</div>';
-    if (r && r.days && r.month === new Date().getMonth() + 1) {
+    if (hh('qa')) h += '<div class="secth"><b>' + t('Quick actions') + '</b></div><div class="qa">' + acts.map(a => '<button data-act="qa" data-k="' + a[0] + '"><i style="background:' + a[3] + ';color:' + a[4] + '">' + a[1] + '</i>' + t(a[2]) + '</button>').join('') + '</div>';
+    if (hh('jobs') && KL.jobsCard) h += KL.jobsCard();
+    if (hh('week') && r && r.days && r.month === new Date().getMonth() + 1) {
       const d0 = new Date().getDate(), from = Math.max(1, d0 - 6), days = r.days.slice(from - 1, d0), mx = Math.max.apply(null, days.map(d => d.sales).concat([1]));
       const DN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       h += '<div class="card" style="margin-top:16px"><div class="row between"><b>' + t('This week') + '</b><span class="small muted">' + money(sum(days, d => d.sales)) + '</span></div><div class="wk" style="margin-top:10px">' +
@@ -156,7 +162,7 @@ html,body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif
     if (r && r.people) r.people.filter(p => p.cashHeld > 0.004).forEach(p => att.push({ k: 'cash', i: '⇩', bg: '#E0F2FE', fg: '#075985', a: esc(p.name) + ' holds cash', b: t('Receive cash'), amt: money(p.cashHeld), o: 3 }));
     if (KL.moreAttention) KL.moreAttention().forEach(x => att.push(x));
     att.sort((x, y) => x.o - y.o);
-    h += '<div class="secth"><b>' + t('Needs your attention') + '</b></div><div class="card" style="padding:2px 14px">' + (att.length ? att.slice(0, 6).map(x => '<button class="att" data-act="att" data-k="' + x.k + '" data-no="' + esc(x.no || '') + '"><i style="background:' + x.bg + ';color:' + x.fg + '">' + x.i + '</i><span class="grow"><b style="font-size:14px">' + x.a + '</b><br><span class="small muted">' + x.b + '</span></span><b style="color:' + x.fg + '">' + x.amt + '</b></button>').join('') : '<div class="empty">All clear 👍</div>') + '</div>';
+    if (hh('att')) h += '<div class="secth"><b>' + t('Needs your attention') + '</b></div><div class="card" style="padding:2px 14px">' + (att.length ? att.slice(0, 6).map(x => '<button class="att" data-act="att" data-k="' + x.k + '" data-no="' + esc(x.no || '') + '"><i style="background:' + x.bg + ';color:' + x.fg + '">' + x.i + '</i><span class="grow"><b style="font-size:14px">' + x.a + '</b><br><span class="small muted">' + x.b + '</span></span><b style="color:' + x.fg + '">' + x.amt + '</b></button>').join('') : '<div class="empty">All clear 👍</div>') + '</div>';
     return h;
   }
   async function newDoc(k) { S.tab = 'docs'; if (KL.docs.state) KL.docs.state.type = k; render(); await KL.docs.load(); ACT.dNew({ k: k }); }
@@ -166,6 +172,7 @@ html,body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif
     if (k === 'cash') return ACT.tab({ t: 'cash' });
     if (k === 'custs') return ACT.tab({ t: 'custs' });
     if (k === 'jobs') return ACT.tab({ t: 'jobs' });
+    if (k === 'cards') return ACT.tab({ t: 'cards' });
     if (k === 'stock') return ACT.tab({ t: 'money' });
     if (k === 'exp') return ACT.xNew({ job: '' });
     if (k === 'calc') { await newDoc('EST'); return ACT.dEstimator(); }
