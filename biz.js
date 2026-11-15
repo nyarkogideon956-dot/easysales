@@ -58,10 +58,30 @@
         '<p class="small muted" style="margin-top:18px">Forgot your key? Ask the shop owner.</p></form>';
       document.body.appendChild(d);
       const inp = d.querySelector('#esgk'); setTimeout(() => inp.focus(), 50);
-      d.querySelector('#esgf').addEventListener('submit', ev => {
+      d.querySelector('#esgf').addEventListener('submit', async ev => {
         ev.preventDefault();
-        if (inp.value.trim() === String(S.session.key).trim()) d.remove();
-        else { d.querySelector('#esge').textContent = 'Wrong key. Try again.'; inp.value = ''; inp.focus(); }
+        const typed = inp.value.trim(), er = d.querySelector('#esge');
+        if (typed === String(S.session.key).trim()) { d.remove(); return; }
+        // not the key this phone signed in with: if it is a real key (for example a changed key), switch to it
+        if (typed.length >= 4 && navigator.onLine) {
+          er.textContent = 'Checking…';
+          const old = S.session;
+          try {
+            S.session = { key: typed };
+            const r = await KL.api('login');
+            if (r.ok) {
+              S.session = Object.assign({ key: typed }, r.user);
+              await KL.kvSet('session', S.session);
+              S.tab = S.session.role === 'admin' ? 'dash' : 'sell';
+              d.remove(); KL.fn('render')(); KL.toast('Signed in as ' + (S.session.name || ''));
+              try { const bb = await KL.api('bootstrap'); if (bb.ok) { S.cache = bb; KL.kvSet('cache', bb).catch(() => {}); KL.fn('render')(true); } } catch (x) { /* later */ }
+              return;
+            }
+            S.session = old;
+          } catch (e) { S.session = old; }
+        }
+        er.textContent = navigator.onLine ? 'Wrong key. Try again.' : 'Wrong key. (No internet, so only the key this phone signed in with works.)';
+        inp.value = ''; inp.focus();
       });
     }
     // when the app starts with someone already signed in
