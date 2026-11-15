@@ -862,7 +862,8 @@ function editProdSheet(name) {
     '<label>Name</label><input id="en" value="' + esc(p ? p.name : '') + '" ' + (p ? 'readonly' : '') + ' autocomplete="off" placeholder="Example: Samsung A15 128GB"><label>Group (optional)</label><input id="ec" list="ecl" value="' + esc(p ? p.cat || '' : '') + '" autocomplete="off" placeholder="Example: Samsung"><datalist id="ecl">' + cats.map(x => '<option value="' + esc(x) + '">').join('') + '</datalist>' +
     '<div class="picker"><div><label>Selling price (GH₵)</label><input id="ep" type="number" inputmode="decimal" value="' + (p ? p.price : '') + '"></div><div><label>Cost price (GH₵)</label><input id="eco" type="number" inputmode="decimal" value="' + (p && p.cost ? p.cost : '') + '" placeholder="Only you see this"></div></div>' +
     (p ? '<label>Show in the sell screen?</label><select id="ea"><option value="1"' + (p.active ? ' selected' : '') + '>Yes</option><option value="0"' + (p.active ? '' : ' selected') + '>No, hide it</option></select>' : '') +
-    '<br><button class="btn primary block" data-act="saveprod">Save</button>');
+    '<br><button class="btn primary block" data-act="saveprod">Save</button>' +
+    (p ? '<button class="btn block" style="margin-top:10px;color:#B91C1C;border-color:#FCA5A5" data-act="delprod">Delete this product</button><p class="small muted" style="text-align:center;margin:6px 0 0">Only for a product typed by mistake. A product that has been sold can only be hidden.</p>' : ''));
 }
 function editCustSheet(name) {
   const c = name ? S.lists.customers.find(x => x.name === name) : null;
@@ -965,6 +966,21 @@ const ACT = {
       toast('Saved'); _brand = ''; render(true);
       if (logo !== undefined) loadPhotos(true);
     } catch (e) { toast('Not saved - check your internet'); }
+  },
+  delprod: async () => {
+    const name = $('#en').value.trim(); if (!name) return;
+    if (JSON.stringify(S.queue || []).indexOf(JSON.stringify(name)) >= 0) { toast('This product has a sale not sent yet. Hide it instead.'); return; }
+    if (!confirm('Delete "' + name + '"? This cannot be undone.')) return;
+    if (!navigator.onLine) { toast('Needs internet to delete'); return; }
+    toast('Deleting…');
+    try {
+      const r = await api('admin', { op: 'deleteProduct', name });
+      if (!r.ok) { toast(r.error === 'product_sold' ? 'It has been sold, so it cannot be deleted. Set "Show in the sell screen" to No to hide it.' : 'Not deleted: ' + errText(r.error)); return; }
+      S.lists = r.lists; kvSet('lists', r.lists).catch(() => {});
+      if (S.cache && S.cache.products) S.cache.products = S.cache.products.filter(x => kk(x.name) !== kk(name));
+      if (S.photos) delete S.photos[name];
+      closeSheet(); render(true); toast('Deleted');
+    } catch (e) { toast('Needs internet to delete'); }
   },
   saveprod: async () => {
     const name = $('#en').value.trim(), price = +$('#ep').value, a = $('#ea');

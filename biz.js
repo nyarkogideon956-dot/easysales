@@ -43,11 +43,48 @@
   }
   const _logout = ACT.logout; ACT.logout = d => { const l = document.getElementById('eslock'); if (l) l.remove(); return _logout(d); };
 
+
+  /* ---------- type the access key every time the app is opened ---------- */
+  (function keyGate() {
+    let hiddenAt = 0;
+    function show() {
+      if (!(S.session && S.session.key) || document.getElementById('esgate')) return;
+      const d = document.createElement('div'); d.id = 'esgate';
+      d.style.cssText = 'position:fixed;inset:0;z-index:210;background:#F3F5F9;display:flex;align-items:center;justify-content:center;padding:24px';
+      d.innerHTML = '<form id="esgf" style="width:100%;max-width:360px;text-align:center" autocomplete="off"><div style="font-size:46px">🔒</div><h2 style="margin:6px 0">' + esc(bizName()) + '</h2>' +
+        '<p class="muted small" style="margin-top:0">Type your access key to open the app.</p>' +
+        '<input id="esgk" type="password" autocomplete="off" placeholder="Access key" style="width:100%;text-align:center;font-size:18px;padding:12px;border:1.5px solid var(--line);border-radius:12px">' +
+        '<p id="esge" class="red small" style="min-height:18px"></p><button class="btn primary block" type="submit">Open</button>' +
+        '<p class="small muted" style="margin-top:18px">Forgot your key? Ask the shop owner.</p></form>';
+      document.body.appendChild(d);
+      const inp = d.querySelector('#esgk'); setTimeout(() => inp.focus(), 50);
+      d.querySelector('#esgf').addEventListener('submit', ev => {
+        ev.preventDefault();
+        if (inp.value.trim() === String(S.session.key).trim()) d.remove();
+        else { d.querySelector('#esge').textContent = 'Wrong key. Try again.'; inp.value = ''; inp.focus(); }
+      });
+    }
+    // when the app starts with someone already signed in
+    const t = setInterval(() => { if (!S.booted) return; clearInterval(t); if (!sessionStorage.getItem('es_autok')) show(); }, 50);
+    // when the app comes back after being away for 5 minutes or more
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) hiddenAt = Date.now();
+      else if (hiddenAt && Date.now() - hiddenAt >= 5 * 60 * 1000) show();
+    });
+  })();
+
   /* ---------- sign in from a link: ...?k=KEY&s=SERVER ---------- */
   (function autoLogin() {
     // the first visit reloads once when the offline copy installs, so the key is kept for this tab until it is used
     const q = new URLSearchParams(location.search);
     if (q.get('k')) { sessionStorage.setItem('es_autok', q.get('k')); if (q.get('s')) sessionStorage.setItem('es_autos', q.get('s')); }
+    else if (q.get('s')) {   // link without the key: keep the server link, the person types the key
+      const s0 = q.get('s');
+      if (/^https:\/\/script\.google(usercontent)?\.com\//.test(s0)) { S.apiUrl = s0.split('?')[0]; localStorage.setItem(KL.LS('api'), S.apiUrl); }
+      history.replaceState(null, '', location.pathname);
+      const t0 = setInterval(() => { if (!S.booted) return; clearInterval(t0); if (!(S.session && S.session.key)) render(true); }, 100);
+      return;
+    }
     const k = sessionStorage.getItem('es_autok'), s = sessionStorage.getItem('es_autos');
     if (!k) return;
     if (s && /^https:\/\/script\.google(usercontent)?\.com\//.test(s)) { S.apiUrl = s.split('?')[0]; localStorage.setItem(KL.LS('api'), S.apiUrl); }
@@ -438,7 +475,7 @@
   const homeTicks = (sel, pre) => '<div class="card" style="padding:4px 12px;margin-top:4px">' + HOME.map(x => '<label style="display:flex;gap:8px;align-items:center;margin:6px 0;font-weight:600;color:var(--ink)"><input type="checkbox" data-' + pre + '="' + x[0] + '" style="width:auto;min-height:0"' + (sel.indexOf(x[0]) >= 0 ? ' checked' : '') + '> ' + x[1] + '</label>').join('') + '</div>';
   const picked = pre => Array.from(document.querySelectorAll('[data-' + pre + ']')).filter(e => e.checked).map(e => e.dataset[pre]);
   const toLocal = s => String(s || '').replace(' ', 'T');
-  const appLink = key => location.origin + location.pathname + '?k=' + encodeURIComponent(key) + '&s=' + encodeURIComponent(S.apiUrl);
+  const appLink = () => location.origin + location.pathname + '?s=' + encodeURIComponent(S.apiUrl);
   function ctrlHTML() {
     const L = B.lic; if (!L) return '<div class="empty">Loading…</div>';
     let h = '<h2 style="margin-top:6px">This shop: ' + esc(bizName()) + '</h2><div class="card">' + ticks(L.mods, 'lm') +
@@ -483,7 +520,7 @@
   };
   ACT.dmShare = d => {
     const x = B.lic.demos.find(y => y.key === d.k); if (!x) return;
-    const msg = 'Hello ' + x.name + ', here is your EasySales demo. Tap the link to open it (no password needed):\n' + appLink(x.key) + '\n\nIt is open until ' + x.ends + '. Add it to your home screen to use it like an app.\n\nEasySales · ' + PHONE;
+    const msg = 'Hello ' + x.name + ', here is your EasySales demo.\n\n1. Open this link in Chrome:\n' + appLink() + '\n\n2. Your access key: ' + x.key + '\nType it to sign in. The app asks for it each time you open it, so keep it safe and private.\n\nThe demo is open until ' + x.ends + '. Add it to your home screen to use it like an app.\n\nEasySales · ' + PHONE;
     let n = String(x.phone || '').replace(/[^\d]/g, ''); if (n.startsWith('0')) n = '233' + n.slice(1);
     window.open('https://wa.me/' + n + '?text=' + encodeURIComponent(msg), '_blank', 'noopener');
   };
