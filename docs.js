@@ -189,7 +189,7 @@
     const c = cfg();
     return { type, no: '', customer: '', phone: '', location: '', title: '', from: '', items: [], terms: type === 'INV' ? (c.invTerms || '') : type === 'WB' ? '' : (c.estTerms || ''), note: '', vehicle: '', driver: '', dest: '', cash: '', momo: '', rooms: null, trans: '', disc: '', discPct: false, tax: false, clientMat: false };
   }
-  ACT.dNew = d => { D.edit = blank(d.k || D.type); editSheet(); };
+  ACT.dNew = d => { D.edit = Object.assign(blank(d.k || D.type), d.pre || {}); editSheet(); };
   ACT.dEdit = () => { const v = D.view; D.edit = Object.assign(blank(v.type), { no: v.no, customer: v.customer, phone: v.phone, location: v.location, title: v.title, from: v.from, items: (v.data.items || []).map(i => Object.assign({}, i)), terms: v.data.terms || '', note: v.data.note || '', vehicle: v.data.vehicle || '', driver: v.data.driver || '', dest: v.data.dest || '', rooms: v.data.rooms || null }, adjOf(v)); editSheet(); };
   ACT.dConvert = d => {
     const v = D.view, k = d.k;

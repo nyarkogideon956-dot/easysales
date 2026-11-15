@@ -103,6 +103,53 @@ html,body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif
       '<button class="btn block ghost" data-act="lang">' + t('Language') + ': ' + (lang === 'tw' ? 'Twi → English' : 'English → Twi') + '</button></div>');
   }
 
+
+  /* ---------- Home: sales persons and charts folded behind two icons ---------- */
+  S.hOpen = S.hOpen || {};
+  function foldHome(main) {
+    const mark = document.getElementById('hrepmark'); if (!mark) return;
+    const ppl = document.createElement('div'), rep = document.createElement('div');
+    ppl.id = 'hfold-ppl'; rep.id = 'hfold-rep';
+    // everything after the "Reports" title goes into the charts box…
+    let n = mark.nextSibling; const rest = [];
+    while (n) { rest.push(n); n = n.nextSibling; }
+    rest.forEach(x => rep.appendChild(x));
+    // …except what is about sales persons, which goes into its own box
+    const day = rep.querySelector('#xdaycard'); if (day) ppl.appendChild(day);
+    rep.querySelectorAll('h2').forEach(h => {
+      if (/^Sales persons/.test(h.textContent)) { const c = h.nextElementSibling; ppl.appendChild(h); if (c && c.classList.contains('card')) ppl.appendChild(c); }
+    });
+    const wk = Array.from(main.querySelectorAll('.card')).find(c => c.querySelector('.wk') && !rep.contains(c));
+    if (wk) { wk.style.marginTop = '0'; rep.insertBefore(wk, rep.firstChild); }
+    const r = S.rep, dd = KL.dayData ? KL.dayData() : null;
+    const act = dd ? dd.people.filter(p => p.bills || p.firstSeen).length : null;
+    const pplSub = dd ? act + ' active · ' + money(r2(sum(dd.people, p => p.sales || 0))) + ' today' : (r ? money(r.todayTotals.sales) + ' sold today' : 'Who sold, who holds cash');
+    const repSub = r ? money(r.monthTotals.sales) + ' this month' : 'Month, best sellers, debts';
+    const SV = d => '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg>';
+    const IPPL = SV('<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.9-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c2.3.1 4.2 1.6 4.8 4.3"/>');
+    const li = KL.leadsInfo ? KL.leadsInfo() : null;
+    const ILEAD = SV('<path d="M4 5h16v10H8l-4 4z"/><path d="M8 9h8M8 12h5"/>');
+    const IREP = SV('<path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M21 20H3"/>');
+    const tile = (k, ic, bg, fg, ttl, sub) => '<button class="htile' + (S.hOpen[k] ? ' on' : '') + '" data-act="hfold" data-k="' + k + '"><i style="background:' + bg + ';color:' + fg + '">' + ic + '</i><b>' + ttl + '</b><span>' + sub + '</span><em>' + (S.hOpen[k] ? 'Close' : 'Open') + '</em></button>';
+    mark.outerHTML = '<div class="secth"><b>Reports</b></div><div class="htiles">' +
+      tile('ppl', IPPL, '#E0F2FE', '#075985', 'Sales persons', esc(pplSub)) +
+      tile('rep', IREP, '#EDE9FE', '#5B21B6', 'Charts & reports', esc(repSub)) +
+      (li ? '<button class="htile" data-act="tab" data-t="leads"><i style="background:#DCFCE7;color:#166534">' + ILEAD + '</i><b>Leads</b><span>' + (li.loading ? 'People from your adverts' : (li.due ? '<b style="color:#B91C1C;font-size:12.5px">' + li.due + ' to follow up today</b> · ' : '') + li.open + ' open') + '</span><em>Open</em></button>' : '') + '</div>';
+    ppl.style.display = S.hOpen.ppl ? '' : 'none'; rep.style.display = S.hOpen.rep ? '' : 'none';
+    main.appendChild(ppl); main.appendChild(rep);
+    main.insertAdjacentHTML('beforeend', '<div style="height:90px"></div>');
+  }
+  ACT.hfold = d => { S.hOpen[d.k] = !S.hOpen[d.k]; render(true); };
+  (function () {
+    const st = document.createElement('style');
+    st.textContent = '.htiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}' +
+      '.htile{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:14px;border:1px solid var(--line);border-radius:16px;background:#fff;font:inherit;cursor:pointer}' +
+      '.htile.on{border-color:#B45309;box-shadow:0 0 0 2px #FDE7C7}' +
+      '.htile i{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-style:normal;font-size:20px;margin-bottom:4px}' +
+      '.htile b{font-size:15px}.htile span{font-size:12.5px;color:var(--mute,#64748b);line-height:1.3}.htile em{position:absolute;top:14px;right:14px;font-style:normal;font-size:12px;font-weight:600;color:#B45309}';
+    document.head.appendChild(st);
+  })();
+
   /* ---------- after every draw ---------- */
   const _render = KL.fn('render');
   KL.setFn('render', function (k) {
@@ -116,7 +163,7 @@ html,body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif
     const main = document.querySelector('main.wrap');
     if (main && S.tab === 'dash' && isOwner()) {
       const hh = c => !KL.homeHas || KL.homeHas(c);
-      if (hh('reports')) main.insertAdjacentHTML('afterbegin', homeHTML() + '<div class="secth"><b>Reports</b></div>');
+      if (hh('reports')) { main.insertAdjacentHTML('afterbegin', homeHTML() + '<div class="secth" id="hrepmark"><b>Reports</b></div>'); foldHome(main); }
       else main.innerHTML = homeHTML() + '<div style="height:90px"></div>';
       if (docsOn() && !KL.docs.state.list && navigator.onLine && !KL.docs._asked) { KL.docs._asked = 1; KL.docs.load().then(() => { if (S.tab === 'dash') render(true); }); }
     }

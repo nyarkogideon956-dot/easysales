@@ -214,3 +214,137 @@
   ACT.cfSet = () => { const c = cfg(); sheet('<h2>Job card settings</h2><label>Job cards for</label><select id="cks"><option value="Both"' + ((c.cardKinds || 'Both') === 'Both' ? ' selected' : '') + '>Repairs and sewing</option><option value="Repair"' + (c.cardKinds === 'Repair' ? ' selected' : '') + '>Repairs only (phones, laptops…)</option><option value="Tailoring"' + (c.cardKinds === 'Tailoring' ? ' selected' : '') + '>Sewing only (tailor, seamstress)</option></select><label>Terms on the ticket</label><textarea id="ckt" rows="4" style="width:100%;border:1.5px solid var(--line);border-radius:12px;padding:10px;font:inherit">' + esc(c.cardTerms || '') + '</textarea><br><button class="btn primary block" data-act="cfSetSave">Save</button>'); };
   ACT.cfSetSave = async (d, btn) => { btn.disabled = true; try { const r = await api('admin', { op: 'saveSettings', values: { cardKinds: $('#cks').value, cardTerms: $('#ckt').value } }); if (!r.ok) { toast(errText(r.error)); btn.disabled = false; return; } if (S.cache && r.cfg) S.cache.cfg = r.cfg; toast('Saved'); closeSheet(); render(true); } catch (e) { toast('Needs internet'); btn.disabled = false; } };
 })();
+
+/* EasySales - Leads: people who ask about work after an advert (WhatsApp, Facebook, TikTok…). Owner only. */
+(function () {
+  'use strict';
+  const KL = window.KL; if (!KL) return;
+  const { S, ACT, ICON, api, esc, today, toast, sheet, closeSheet, errText, bizName } = KL;
+  const render = k => KL.fn('render')(k);
+  const L = { list: null, asked: 0, filter: 'open', stages: ['New', 'Talked', 'Site visit', 'Quote sent', 'Won', 'Lost'], sources: ['WhatsApp', 'Facebook', 'TikTok', 'Referral', 'Walk-in', 'Other'] };
+  const on = () => S.session && S.session.role === 'admin' && KL.hasMod && KL.hasMod('leads');
+  const isOpen = l => l.stage !== 'Won' && l.stage !== 'Lost';
+  const due = l => isOpen(l) && l.next && l.next <= today();
+  const addDays = n => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+  const nice = d => { if (!d) return ''; if (d === today()) return 'today'; if (d === addDays(1)) return 'tomorrow'; const x = new Date(d + 'T00:00'); return x.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); };
+  const SC = { New: ['#E0F2FE', '#075985'], Talked: ['#EDE9FE', '#5B21B6'], 'Site visit': ['#FEF3C7', '#92400E'], 'Quote sent': ['#FFEDD5', '#B45309'], Won: ['#DCFCE7', '#166534'], Lost: ['#F1F5F9', '#64748B'] };
+  const pill = s => '<span style="font-size:11.5px;font-weight:700;padding:3px 8px;border-radius:99px;background:' + (SC[s] || SC.New)[0] + ';color:' + (SC[s] || SC.New)[1] + '">' + esc(s) + '</span>';
+  const intl = p => { let d = String(p || '').replace(/\D/g, ''); if (d.startsWith('0')) d = '233' + d.slice(1); else if (d.length === 9) d = '233' + d; return d; };
+  const inp = 'width:100%;font:inherit;padding:12px;border:1.5px solid var(--line);border-radius:12px;background:#fff';
+
+  ICON.leads = '<svg viewBox="0 0 24 24"><path d="M4 5h16v10H8l-4 4z"/><path d="M8 9h8M8 12h5"/></svg>';
+  const _tabsFor = KL.fn('tabsFor');
+  KL.setFn('tabsFor', function () { const t = _tabsFor(); if (on()) t.push(['leads', 'Leads']); return t; });
+  const _tab = ACT.tab; ACT.tab = d => { _tab(d); if (d.t === 'leads') load(); };
+  const _render = KL.fn('render');
+  KL.setFn('render', function (k) {
+    _render(k);
+    if (!S.session) return;
+    const m = document.querySelector('main.wrap');
+    if (m && S.tab === 'leads') m.innerHTML = listHTML();
+    if (S.tab === 'dash' && on() && !L.list && !L.asked && navigator.onLine) { L.asked = 1; load(); }
+  });
+  // Home: leads to follow up today
+  const _att = KL.moreAttention;
+  KL.moreAttention = () => {
+    const base = _att ? _att() : []; if (!on() || !L.list) return base;
+    L.list.filter(due).slice(0, 3).forEach(l => base.push({ k: 'leads', i: '✆', bg: '#DCFCE7', fg: '#166534', a: esc(l.name) + (l.wants ? ' · ' + esc(l.wants) : ''), b: 'Follow up ' + (l.next < today() ? '(late, was ' + nice(l.next) + ')' : 'today') + ' · ' + esc(l.source), amt: '', o: 1 }));
+    return base;
+  };
+  KL.leadsInfo = () => on() ? (L.list ? { due: L.list.filter(due).length, open: L.list.filter(isOpen).length } : { due: 0, open: 0, loading: true }) : null;
+
+  async function load() {
+    try { const r = await api('leads', { op: 'list' }); if (r.ok) { take(r); KL.kvSet('leads', r.leads).catch(() => {}); } else toast(errText(r.error)); }
+    catch (e) { if (!L.list) { try { L.list = await KL.kvGet('leads'); } catch (x) { /* none */ } } }
+    if (S.tab === 'leads' || S.tab === 'dash') render(true);
+  }
+  function take(r) { L.list = r.leads; if (r.stages) L.stages = r.stages; if (r.sources) L.sources = r.sources; }
+  async function send(body, msg) {
+    if (!navigator.onLine) { toast('Needs internet'); return false; }
+    try { const r = await api('leads', body); if (!r.ok) { toast(errText(r.error)); return false; } take(r); KL.kvSet('leads', r.leads).catch(() => {}); if (msg) toast(msg); return true; }
+    catch (e) { toast('Needs internet'); return false; }
+  }
+
+  function listHTML() {
+    if (!L.list) return '<div class="empty">' + (navigator.onLine ? 'Loading…' : 'Leads need internet the first time.') + '</div>';
+    const all = L.list, dueN = all.filter(due).length;
+    const chips = [['open', 'Open (' + all.filter(isOpen).length + ')'], ['due', 'Follow up (' + dueN + ')']].concat(L.stages.map(s => [s, s + ' (' + all.filter(l => l.stage === s).length + ')']));
+    const shown = all.filter(l => L.filter === 'open' ? isOpen(l) : L.filter === 'due' ? due(l) : l.stage === L.filter)
+      .sort((a, b) => (a.next || '9999') < (b.next || '9999') ? -1 : 1);
+    let h = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Leads</h2><button class="btn sm primary" data-act="ldEdit" data-id="">+ Add lead</button></div>' +
+      '<p class="small muted" style="margin:4px 0 10px">People who asked about work from your adverts. Only you see this.</p>' +
+      '<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:6px">' + chips.map(c => '<button class="btn sm' + (L.filter === c[0] ? ' primary' : '') + '" style="white-space:nowrap" data-act="ldFilter" data-f="' + esc(c[0]) + '">' + esc(c[1]) + '</button>').join('') + '</div>';
+    h += '<div class="card" style="padding:2px 14px;margin-top:6px">' + (shown.length ? shown.map(l => {
+      const late = due(l);
+      return '<button class="item" data-act="ldView" data-id="' + esc(l.id) + '" style="width:100%;text-align:left"><span class="grow"><span class="nm">' + esc(l.name) + '</span> ' + pill(l.stage) +
+        '<br><span class="small muted">' + esc(l.wants || 'No details yet') + (l.area ? ' · ' + esc(l.area) : '') + ' · ' + esc(l.source) + '</span>' +
+        (isOpen(l) && l.next ? '<br><span class="small" style="font-weight:600;color:' + (late ? '#B91C1C' : '#166534') + '">Follow up ' + nice(l.next) + '</span>' : '') + '</span></button>';
+    }).join('') : '<div class="empty" style="padding:22px 0">' + (all.length ? 'None here.' : 'No leads yet. Tap + Add lead when someone messages you about work.') + '</div>') + '</div>';
+    if (all.length) {
+      const by = L.sources.map(s => { const x = all.filter(l => l.source === s); return [s, x.length, x.filter(l => l.stage === 'Won').length]; }).filter(x => x[1]);
+      h += '<h2>Where your leads come from</h2><div class="card">' + by.map(x => '<div class="row between" style="padding:6px 0"><span>' + esc(x[0]) + '</span><span class="small"><b>' + x[1] + '</b> lead' + (x[1] === 1 ? '' : 's') + ' · <b style="color:#166534">' + x[2] + '</b> won</span></div>').join('') +
+        '<p class="small muted" style="margin:6px 0 0">Spend more on the adverts that bring won jobs.</p></div>';
+    }
+    return h + '<div style="height:90px"></div>';
+  }
+  ACT.ldFilter = d => { L.filter = d.f; render(true); };
+
+  const find = id => (L.list || []).find(l => l.id === id);
+  ACT.ldView = d => {
+    const l = find(d.id); if (!l) return;
+    const row = (a, b) => b ? '<div class="row between" style="padding:5px 0;border-bottom:1px solid var(--line)"><span class="muted small">' + a + '</span><span style="text-align:right">' + b + '</span></div>' : '';
+    sheet('<h2 style="margin-bottom:4px">' + esc(l.name) + '</h2><div style="margin-bottom:10px">' + pill(l.stage) + '</div>' +
+      row('Wants', esc(l.wants)) + row('Area', esc(l.area)) + row('Phone', l.phone ? '<a href="tel:' + esc(l.phone) + '">' + esc(l.phone) + '</a>' : '') + row('Came from', esc(l.source)) +
+      row('First contact', nice(l.date)) + row('Last follow-up', l.last ? nice(l.last) : 'Not yet') + row('Next follow-up', isOpen(l) ? (l.next ? nice(l.next) : 'Not set') : '') + row('Notes', esc(l.notes)) +
+      '<label style="margin-top:12px">Move to</label><div style="display:flex;flex-wrap:wrap;gap:6px">' + L.stages.map(s => '<button class="btn sm' + (s === l.stage ? ' primary' : '') + '" data-act="ldStage" data-id="' + esc(l.id) + '" data-s="' + esc(s) + '">' + esc(s) + '</button>').join('') + '</div>' +
+      (l.phone ? '<button class="btn primary block" style="margin-top:14px;background:#16A34A;border-color:#16A34A" data-act="ldWa" data-id="' + esc(l.id) + '">Follow up on WhatsApp</button>' : '<p class="small muted" style="margin-top:12px">Add a phone number to follow up on WhatsApp.</p>') +
+      (KL.hasMod('docs') ? '<button class="btn block" style="margin-top:8px" data-act="ldEst" data-id="' + esc(l.id) + '">Start an estimate for ' + esc(l.name.split(' ')[0]) + '</button>' : '') +
+      '<div class="row between" style="margin-top:12px"><button class="btn sm" data-act="ldEdit" data-id="' + esc(l.id) + '">Edit</button><button class="btn sm" style="color:#B91C1C" data-act="ldDel" data-id="' + esc(l.id) + '">Delete</button></div>');
+  };
+  ACT.ldStage = async d => {
+    if (await send({ op: 'stage', id: d.id, stage: d.s }, d.s === 'Won' ? 'Won! Added to your customers.' : 'Moved to ' + d.s)) { closeSheet(); render(true); ACT.ldView({ id: d.id }); }
+  };
+  ACT.ldEdit = d => {
+    const l = d.id ? find(d.id) : null;
+    sheet('<h2>' + (l ? 'Edit lead' : 'New lead') + '</h2>' +
+      '<label>Name</label><input id="ldn" style="' + inp + '" value="' + esc(l ? l.name : '') + '" placeholder="Example: Ama Mensah">' +
+      '<label>Phone (WhatsApp)</label><input id="ldp" type="tel" style="' + inp + '" value="' + esc(l ? l.phone : '') + '" placeholder="024 000 0000">' +
+      '<label>Where did they find you?</label><select id="lds" style="' + inp + '">' + L.sources.map(s => '<option' + ((l ? l.source : 'WhatsApp') === s ? ' selected' : '') + '>' + esc(s) + '</option>').join('') + '</select>' +
+      '<label>What do they want?</label><input id="ldw" style="' + inp + '" value="' + esc(l ? l.wants : '') + '" placeholder="Example: POP ceiling, 3 rooms">' +
+      '<label>Area</label><input id="lda" style="' + inp + '" value="' + esc(l ? l.area : '') + '" placeholder="Example: Kasoa, Millennium City">' +
+      '<label>Next follow-up</label><input id="ldx" type="date" style="' + inp + '" value="' + esc(l ? l.next : addDays(2)) + '">' +
+      '<label>Notes (optional)</label><input id="ldo" style="' + inp + '" value="' + esc(l ? l.notes : '') + '">' +
+      '<br><button class="btn primary block" data-act="ldSave" data-id="' + esc(l ? l.id : '') + '">Save</button>');
+  };
+  ACT.ldSave = async d => {
+    const v = id => (document.getElementById(id) || {}).value || '';
+    if (!v('ldn').trim()) { toast('Type the name'); return; }
+    const l = d.id ? find(d.id) : null;
+    if (await send({ op: 'save', id: d.id, name: v('ldn').trim(), phone: v('ldp').trim(), source: v('lds'), wants: v('ldw').trim(), area: v('lda').trim(), next: v('ldx'), notes: v('ldo').trim(), stage: l ? l.stage : 'New' }, 'Saved')) {
+      closeSheet(); if (S.tab !== 'leads') S.tab = 'leads'; render(true);
+    }
+  };
+  ACT.ldDel = async d => {
+    const l = find(d.id); if (!l || !confirm('Delete the lead "' + l.name + '"?')) return;
+    if (await send({ op: 'delete', id: d.id }, 'Deleted')) { closeSheet(); render(true); }
+  };
+  ACT.ldWa = d => {
+    const l = find(d.id); if (!l) return;
+    const first = l.name.split(' ')[0];
+    const msg = 'Hello ' + first + ', this is ' + bizName() + '. How far with the ' + (l.wants || 'work') + ' you asked about? We are ready to help whenever you are. Thank you.';
+    sheet('<h2>Follow up on WhatsApp</h2><label>Message (you can change it)</label><textarea id="ldm" rows="5" style="' + inp + '">' + esc(msg) + '</textarea>' +
+      '<label>Next follow-up</label><input id="ldnx" type="date" style="' + inp + '" value="' + addDays(3) + '">' +
+      '<br><button class="btn primary block" style="background:#16A34A;border-color:#16A34A" data-act="ldWaGo" data-id="' + esc(l.id) + '">Open WhatsApp</button>');
+  };
+  ACT.ldWaGo = d => {
+    const l = find(d.id); if (!l) return;
+    const m = document.getElementById('ldm').value, nx = document.getElementById('ldnx').value;
+    window.open('https://wa.me/' + intl(l.phone) + '?text=' + encodeURIComponent(m), '_blank');
+    send({ op: 'touch', id: l.id, next: nx }, 'Noted. Next follow-up ' + nice(nx)).then(() => { closeSheet(); render(true); });
+  };
+  ACT.ldEst = d => {
+    const l = find(d.id); if (!l) return; closeSheet();
+    S.tab = 'docs'; if (KL.docs && KL.docs.state) KL.docs.state.type = 'EST'; render();
+    Promise.resolve(KL.docs && KL.docs.load ? KL.docs.load() : null).then(() => ACT.dNew({ k: 'EST', pre: { customer: l.name, phone: l.phone, location: l.area, title: l.wants } }));
+  };
+})();

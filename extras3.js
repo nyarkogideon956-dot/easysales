@@ -305,6 +305,7 @@
 
   /* ---------- owner: day report on the Dashboard ---------- */
   const DY = { date: null, data: null, loading: false };
+  KL.dayData = () => (DY.data && DY.data.date === today() ? DY.data : null);
   function loadDay() {
     if (!navigator.onLine) return; DY.loading = true; const want = DY.date;
     api('x', { op: 'dayreport', date: want }).then(r => { DY.loading = false; if (r.ok && DY.date === want) DY.data = r; if (S.tab === 'dash') render(true); }).catch(() => { DY.loading = false; });
@@ -318,17 +319,27 @@
     if (!d) h += '<p class="small muted">Loading…</p>';
     else {
       const t = f => r2(sum(d.people, p => p[f] || 0));
-      h += '<div class="small muted" style="margin:6px 0">Total sales <b>' + money(t('sales')) + '</b> · cash ' + money(t('cash')) + ' · MoMo ' + money(t('momo')) + ' · credit ' + money(t('credit')) + ' · debts paid ' + money(t('debtIn')) + '</div>';
-      h += daySummary(d);
-      h += d.people.map(p => {
-        const seen = p.firstSeen ? 'Signed in ' + esc(p.firstSeen) + (p.lastSeen && p.lastSeen !== p.firstSeen ? ' · last seen ' + esc(p.lastSeen) : '') : 'Not seen';
+      const st = (l, v, c) => '<div style="background:#F8FAFC;border-radius:12px;padding:9px 10px"><div class="small muted">' + l + '</div><b style="font-size:15px' + (c ? ';color:' + c : '') + '">' + v + '</b></div>';
+      const held = r2(sum(d.people, p => p.heldEnd || 0));
+      h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0">' + st('Sales', money(t('sales'))) + st('Cash', money(t('cash'))) + st('MoMo', money(t('momo'))) + st('On credit', money(t('credit'))) + '</div>' +
+        (t('debtIn') ? '<div class="small muted">Debts paid this day: <b>' + money(t('debtIn')) + '</b></div>' : '') +
+        (held > 0.004 ? '<div class="small" style="color:#B45309;font-weight:600;margin-top:2px">Cash still with sales persons: ' + money(held) + '</div>' : '');
+      const busy = d.people.filter(p => p.firstSeen || p.bills || p.firstSale || p.closed || (p.pays && p.pays.length));
+      const idle = d.people.filter(p => busy.indexOf(p) < 0);
+      const one = p => {
+        const seen = p.firstSeen ? 'Signed in ' + esc(p.firstSeen) + (p.lastSeen && p.lastSeen !== p.firstSeen ? ' · last seen ' + esc(p.lastSeen) : '') + ' · ' : (p.firstSale ? '' : 'Not seen · ');
         const sales = p.firstSale ? 'Sales ' + esc(p.firstSale) + ' to ' + esc(p.lastSale) : 'No sales';
         const cl = p.closed ? 'Closed ' + esc(p.closed.at) + ' · counted ' + money(p.closed.counted) + ' of ' + money(p.closed.expected) + ' · ' + diffText(p.closed.diff) : '<span class="muted">Day not closed</span>';
         const det = (p.bills_ && p.bills_.length || p.pays && p.pays.length) ? '<details style="margin-top:4px"><summary class="small" style="cursor:pointer;color:var(--violet);font-weight:600">See each bill (' + p.bills_.length + ')</summary>' +
           p.bills_.map(b => { const o = r2(b.total - b.paid); return '<button class="item" data-act="xdbill" data-p="' + esc(p.name) + '" data-id="' + esc(b.id) + '"><span class="grow"><span class="nm">' + esc(b.customer) + '</span><br><span class="small muted">' + esc(b.time) + ' · ' + esc(b.items.map(i => i.q + ' ' + i.p).join(', ')) + '</span></span><span class="right"><span class="amt">' + money(b.total) + '</span>' + (o > 0.004 ? '<br><span class="small red">owes ' + money(o) + '</span>' : '') + '</span></button>'; }).join('') +
           (p.pays || []).map(y => '<div class="item"><span class="grow"><span class="nm">' + esc(y.customer) + '</span><br><span class="small muted">' + esc(y.time) + ' · debt payment</span></span><span class="right"><span class="amt">' + money(y.total) + '</span></span></div>').join('') + '</details>' : '';
-        return '<div style="border-top:1px solid var(--line);padding:8px 0"><div class="row between"><b>' + esc(p.name) + '</b><b>' + money(p.sales) + '</b></div><div class="small muted">' + p.bills + ' bill(s) · cash ' + money(p.cash) + ' · MoMo ' + money(p.momo) + ' · credit ' + money(p.credit) + (p.debtIn ? ' · debts paid ' + money(p.debtIn) : '') + (p.handed ? ' · handed over ' + money(p.handed) : '') + '</div><div class="small">' + seen + ' · ' + sales + '</div><div class="small">' + cl + '</div>' + det + '</div>';
-      }).join('');
+        const hold = p.heldEnd > 0.004 ? '<span style="color:#B45309;font-weight:600">holds ' + money(p.heldEnd) + '</span>' : (p.bills ? 'all cash handed in' : 'no sales');
+        const ini = String(p.name).split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase();
+        return '<div style="border-top:1px solid var(--line);padding:10px 0"><div style="display:flex;align-items:center;gap:10px"><span style="width:36px;height:36px;border-radius:50%;background:#E0F2FE;color:#075985;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex:none">' + esc(ini) + '</span>' +
+          '<span style="flex:1;min-width:0"><b>' + esc(p.name) + '</b><br><span class="small muted">' + p.bills + ' bill' + (p.bills === 1 ? '' : 's') + ' · ' + hold + '</span></span><b>' + money(p.sales) + '</b></div>' +
+          '<details style="margin:6px 0 0 46px"><summary class="small" style="cursor:pointer;color:var(--violet);font-weight:600">More</summary><div class="small muted" style="margin-top:4px">Cash ' + money(p.cash) + ' · MoMo ' + money(p.momo) + ' · credit ' + money(p.credit) + (p.debtIn ? ' · debts paid ' + money(p.debtIn) : '') + (p.handed ? ' · handed over ' + money(p.handed) : '') + '</div><div class="small">' + seen + sales + '</div><div class="small">' + cl + '</div>' + det + '</details></div>';
+      };
+      h += busy.map(one).join('') + (idle.length ? '<details style="border-top:1px solid var(--line);padding:8px 0"><summary class="small muted" style="cursor:pointer">' + idle.length + ' other' + (idle.length > 1 ? 's' : '') + ' — no activity this day</summary>' + idle.map(one).join('') + '</details>' : '') + (d.people.length ? '' : '');
     }
     pk.insertAdjacentHTML('afterend', h + '<button class="btn block" style="margin-top:10px" data-act="xweek">Print weekly sheets</button></div>');
   }

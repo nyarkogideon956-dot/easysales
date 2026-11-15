@@ -6,7 +6,7 @@
   const render = k => KL.fn('render')(k);
   const PHONE = '020 320 7240', WA = '233203207240';
   const B = { jview: 'jobs', crew: null, types: ['Worker', 'Subcontractor', 'Apprentice'], jobs: null, cats: [], stages: [], stock: null, exp: null, expMonth: today().slice(0, 7), profit: null, mtab: 'stock', lic: null };
-  const SECTIONS = [['sell', 'Sell & customers'], ['docs', 'Estimates, invoices, waybills'], ['est', 'Estimator (ceilings, POP, partitions)'], ['build', 'Construction extras (labour, transport, client buys materials, payment plan)'], ['jobs', 'Jobs'], ['stock', 'Stock'], ['money', 'Expenses & profit'], ['cash', 'Cash'], ['team', 'Team'], ['cards', 'Job cards (phone & laptop repairs, tailoring)']];
+  const SECTIONS = [['sell', 'Sell & customers'], ['docs', 'Estimates, invoices, waybills'], ['est', 'Estimator (ceilings, POP, partitions)'], ['build', 'Construction extras (labour, transport, client buys materials, payment plan)'], ['jobs', 'Jobs'], ['stock', 'Stock'], ['money', 'Expenses & profit'], ['cash', 'Cash'], ['team', 'Team'], ['cards', 'Job cards (phone & laptop repairs, tailoring)'], ['leads', 'Leads (people from adverts: WhatsApp, Facebook) - owner only']];
   Object.assign(KL.ERR, { already_exists: 'That name is already on your list.', demo_ended: 'This demo has ended. Call ' + PHONE + ' to keep using EasySales.', licence_ended: 'Your EasySales subscription has ended. Your records are safe. Call ' + PHONE + ' to renew.', section_off: 'This section is not switched on for you.', vendor_only: 'Only EasySales can do that.', job_exists: 'A job was already started from this document.', bad_date: 'Check the date and time.' });
 
   KL.hasMod = m => !S.session || !S.session.mods || S.session.mods.indexOf(m) >= 0;
@@ -120,7 +120,7 @@
   ACT.tab = d => { _tab(d); if (d.t === 'jobs') loadJobs(); if (d.t === 'money') loadMoney(); if (d.t === 'ctrl') loadLic(); };
   const _render = KL.fn('render');
   KL.setFn('render', function (k) {
-    if (S.session && S.tab && !KL.fn('tabsFor')().some(x => x[0] === S.tab) && S.tab !== 'setup' && !['jobs', 'money', 'ctrl'].includes(S.tab)) S.tab = isOwner() ? 'dash' : 'sell';
+    if (S.session && S.tab && !KL.fn('tabsFor')().some(x => x[0] === S.tab) && S.tab !== 'setup' && !['jobs', 'money', 'ctrl', 'leads'].includes(S.tab)) S.tab = isOwner() ? 'dash' : 'sell';
     _render(k);
     if (!S.session) return;
     const m = document.querySelector('main.wrap');
