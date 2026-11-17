@@ -876,7 +876,7 @@
       const s = r.summary, L = (a, b) => '<div class="row between" style="padding:6px 0;border-bottom:1px solid var(--line)"><span>' + a + '</span><b>' + b + '</b></div>';
       const jobs = (PACK.estimates || []).filter(e => e.job), waits = (PACK.estimates || []).filter(e => !e.job);
       sheet('<h2>Import from ' + esc(PACK.from || 'the old app') + '</h2><p class="small muted" style="margin-top:0">This is what will be added. Nothing is saved yet.</p><div class="card" style="padding:4px 14px">' +
-        L('Materials (new)', s.products.add) + L('Materials (price updated)', s.products.update) + L('Customers', s.customers) + L('Estimates waiting for an answer', s.estimates - s.jobs) + L('Running jobs (with what was paid before)', s.jobs) + L('Estimator rules', s.rules) + L('Business settings', s.settings) + (s.skipped ? L('Already brought in (skipped)', s.skipped) : '') + '</div>' +
+        [['Materials (new)', s.products.add], ['Materials (price updated)', s.products.update], ['Customers', s.customers], ['Estimates waiting for an answer', s.estimates - s.jobs], ['Running jobs (with what was paid before)', s.jobs], ['Expenses', s.expenses ? s.expenses + ' · ' + KL.money(s.expTotal) : 0], ['Job progress notes', s.notes], ['Estimator rules', s.rules], ['Business settings', s.settings], ['Already brought in (skipped)', s.skipped]].filter(x => x[1]).map(x => L(x[0], x[1])).join('') + '</div>' +
         (jobs.length ? '<h3 style="margin:14px 0 4px">Jobs</h3><div class="card" style="padding:4px 14px">' + jobs.map(e => L(esc(e.customer), KL.money(e.job.paid) + ' paid of ' + KL.money(e.total))).join('') + '</div>' : '') +
         (waits.length ? '<h3 style="margin:14px 0 4px">Estimates</h3><div class="card" style="padding:4px 14px">' + waits.map(e => L(esc(e.customer), KL.money(e.total))).join('') + '</div>' : '') +
         '<br><button class="btn primary block" data-act="kgGo">Import now</button><button class="btn ghost block" style="margin-top:8px" data-act="close">Cancel</button>');
@@ -888,7 +888,7 @@
       const r = await KL.api('kg', { pack: PACK, dry: false });
       if (!r.ok) { toast(errText(r.error)); b.disabled = false; b.textContent = 'Import now'; return; }
       const s = r.summary;
-      sheet('<h2>Done</h2><p>Added ' + s.products.add + ' materials, ' + s.customers + ' customers, ' + (s.estimates - s.jobs) + ' estimates and ' + s.jobs + ' running jobs. Rules and business settings updated.</p><p class="small muted">Close the app and open it again so everything shows.</p><button class="btn primary block" data-act="close">OK</button>');
+      sheet('<h2>Done</h2><p>Added: ' + ([[s.products.add, 'materials'], [s.customers, 'customers'], [s.estimates - s.jobs, 'estimates'], [s.jobs, 'running jobs'], [s.expenses, 'expenses (' + KL.money(s.expTotal || 0) + ')'], [s.notes, 'job notes']].filter(x => x[0]).map(x => x[0] + ' ' + x[1]).join(', ') || 'nothing new') + '.</p><p class="small muted">Close the app and open it again so everything shows.</p><button class="btn primary block" data-act="close">OK</button>');
       PACK = null;
     } catch (e) { toast('It took too long. Check Jobs and Documents, then try again: nothing is added twice.'); b.disabled = false; b.textContent = 'Import now'; }
   };
