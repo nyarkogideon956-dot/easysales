@@ -196,6 +196,7 @@ html,body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif
     if (has('cards')) acts.unshift(['cards', '✚', 'Job card', '#DCFCE7', '#166534']);
     acts.splice(6);
     if (hh('qa')) h += '<div class="secth"><b>' + t('Quick actions') + '</b></div><div class="qa">' + acts.map(a => '<button data-act="qa" data-k="' + a[0] + '"><i style="background:' + a[3] + ';color:' + a[4] + '">' + a[1] + '</i>' + t(a[2]) + '</button>').join('') + '</div>';
+    if (KL.targetCard) h += KL.targetCard(r);
     if (hh('jobs') && KL.jobsCard) h += KL.jobsCard();
     if (hh('week') && r && r.days && r.month === new Date().getMonth() + 1) {
       const d0 = new Date().getDate(), from = Math.max(1, d0 - 6), days = r.days.slice(from - 1, d0), mx = Math.max.apply(null, days.map(d => d.sales).concat([1]));
@@ -205,6 +206,7 @@ html,body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif
     }
     const att = [];
     if (docsOn() && KL.docs.state.list) KL.docs.state.list.filter(d => d.type === 'INV').forEach(d => { const s = KL.docs.status(d)[0], b = r2(d.total - (d.paid || 0)); if (b > 0.004 && (s === 'Overdue' || s === 'Part paid' || s === 'Unpaid')) att.push({ k: 'doc', no: d.no, i: s === 'Overdue' ? '!' : '₵', bg: s === 'Overdue' ? '#FEE2E2' : '#FFF7E6', fg: s === 'Overdue' ? '#B91C1C' : '#92400E', a: esc(d.customer) + ' · ' + esc(d.no), b: s + (d.until ? ' · due ' + esc(d.until) : ''), amt: money(b), o: s === 'Overdue' ? 0 : 1 }); });
+    const fdays = parseFloat(cfg().followDays); if (docsOn() && KL.docs.state.list && fdays > 0) { const cut = new Date(); cut.setDate(cut.getDate() - fdays); const cs = cut.toISOString().slice(0, 10); KL.docs.state.list.filter(d => (d.type === 'EST' || d.type === 'PF') && d.status !== 'Accepted' && d.status !== 'Declined' && d.date && d.date <= cs && !(d.until && d.until < today())).slice(0, 3).forEach(d => att.push({ k: 'doc', no: d.no, i: '↻', bg: '#E0F2FE', fg: '#075985', a: esc(d.customer) + ' · ' + esc(d.no), b: 'Estimate sent ' + esc(d.date) + ' · no answer yet. Tap to follow up', amt: money(d.total), o: 2 })); }
     if (r && r.debtors) r.debtors.slice(0, 4).forEach(p => att.push({ k: 'custs', i: '₵', bg: '#FFF7E6', fg: '#92400E', a: esc(p.name), b: t('Owed to you') + (p.last ? ' · ' + esc(p.last) : ''), amt: money(p.balance), o: 2 }));
     if (r && r.people) r.people.filter(p => p.cashHeld > 0.004).forEach(p => att.push({ k: 'cash', i: '⇩', bg: '#E0F2FE', fg: '#075985', a: esc(p.name) + ' holds cash', b: t('Receive cash'), amt: money(p.cashHeld), o: 3 }));
     if (KL.moreAttention) KL.moreAttention().forEach(x => att.push(x));

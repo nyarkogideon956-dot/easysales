@@ -634,7 +634,7 @@ function receiptSheet(b, fresh) {
   _receipt = b;
   const bal = r2(b.total - b.cash - b.momo), cu = derived().customers.find(c => kk(c.name) === kk(b.customer));
   const paidAmt = r2(b.cash + b.momo), stamp = bal <= 0.004 ? ['paid', 'PAID'] : paidAmt > 0 ? ['part', 'PART PAID'] : ['unpaid', 'UNPAID'];
-  sheet('<h2>' + (fresh ? '✓ Sale saved' : 'Receipt') + '</h2><div class="receipt"><div class="stamp ' + stamp[0] + '">' + stamp[1] + '</div><div class="rhead"><img src="' + logoSrc() + '" alt=""><div><b>' + esc(bizName()) + '</b>' + (cfg().phone ? '<div class="small muted">' + esc(cfg().phone) + '</div>' : '') + '</div></div><div class="muted small">' + esc(b.customer) + ' · ' + esc(b.date || '') + ' ' + esc(String(b.time || '').slice(0, 5)) + '</div><hr>' +
+  sheet('<h2>' + (fresh ? '✓ Sale saved' : 'Receipt') + '</h2><div class="receipt"><div class="stamp ' + stamp[0] + '">' + stamp[1] + '</div><div class="rhead"><img src="' + logoSrc() + '" alt=""><div><b>' + esc(bizName()) + '</b>' + ([cfg().phone, cfg().phone2].filter(Boolean).length ? '<div class="small muted">' + esc([cfg().phone, cfg().phone2].filter(Boolean).join(' / ')) + '</div>' : '') + '</div></div><div class="muted small">' + esc(b.customer) + ' · ' + esc(b.date || '') + ' ' + esc(String(b.time || '').slice(0, 5)) + '</div><hr>' +
     b.items.map(i => '<div class="l"><span>' + i.q + ' × ' + esc(i.p) + '</span><span>' + money(i.q * i.u) + '</span></div>').join('') + '<hr>' +
     '<div class="l tot"><span>Total</span><span>' + money(b.total) + '</span></div>' +
     (b.cash ? '<div class="l"><span>Cash</span><span>' + money(b.cash) + '</span></div>' : '') + (b.momo ? '<div class="l"><span>MoMo</span><span>' + money(b.momo) + '</span></div>' : '') +
@@ -656,8 +656,8 @@ async function receiptImage(b) {
   g.fillStyle = c1; g.fillRect(0, 0, W, 150);
   const logo = await loadImg(logoSrc());
   if (logo) { g.fillStyle = '#fff'; g.fillRect(pad - 6, 29, 98, 98); g.drawImage(logo, pad, 35, 86, 86); }
-  g.fillStyle = '#fff'; g.font = F('bold 36'); g.fillText(bizName().slice(0, 26), pad + 112, 72);
-  g.font = F(22); g.fillText([c.tagline, c.phone].filter(Boolean).join('  ·  ').slice(0, 48), pad + 112, 108);
+  g.fillStyle = '#fff'; { let fs = 36; g.font = F('bold ' + fs); while (fs > 20 && g.measureText(bizName()).width > W - pad * 2 - 112) { fs -= 2; g.font = F('bold ' + fs); } g.fillText(bizName(), pad + 112, 72); }
+  g.font = F(22); g.fillText([c.tagline, [c.phone, c.phone2].filter(Boolean).join(' / ')].filter(Boolean).join('  ·  ').slice(0, 52), pad + 112, 108);
   let y = 200;
   g.fillStyle = '#241B2F'; g.font = F('bold 26'); g.fillText('RECEIPT', pad, y);
   g.font = F(22); g.fillStyle = '#6E6479'; g.textAlign = 'right'; g.fillText((b.date || today()) + '  ' + String(b.time || '').slice(0, 5), W - pad, y); g.textAlign = 'left';
@@ -878,7 +878,8 @@ function editBizSheet() {
   sheet('<h2>Business settings</h2><p class="small muted" style="margin-top:0">These show on the app, on receipts and on WhatsApp messages.</p>' +
     '<div class="photo-edit"><img id="blogo" src="' + logoSrc() + '" alt=""><div><label class="btn sm" for="bf">' + (S.photos && S.photos.__logo__ ? 'Change logo' : 'Add logo') + '</label><input id="bf" type="file" accept="image/*" data-in="logo" style="display:none"></div></div>' +
     f('bn', 'Business name', c.name) + f('bt', 'Tagline (optional)', c.tagline, 'placeholder="Example: Phones, repairs and accessories"') +
-    '<div class="picker"><div>' + f('bp', 'Phone', c.phone, 'inputmode="tel"') + '</div><div>' + f('bl', 'Location', c.location) + '</div></div>' +
+    '<div class="picker"><div>' + f('bp', 'Phone', c.phone, 'inputmode="tel"') + '</div><div>' + f('bp2', 'Phone 2 (optional)', c.phone2, 'inputmode="tel"') + '</div></div>' +
+    '<div class="picker"><div>' + f('bl', 'Location', c.location) + '</div><div>' + f('be', 'Email (optional)', c.bizEmail, 'inputmode="email"') + '</div></div>' +
     '<div class="picker"><div>' + f('bm', 'MoMo number', c.momo, 'inputmode="tel"') + '</div><div>' + f('bmn', 'MoMo name', c.momoName) + '</div></div>' +
     f('bb', 'Bank details (optional)', c.bank, 'placeholder="Example: Access Bank, Kasoa - K-Gabs Excel Enterprise"') +
     f('bnote', 'Message at the bottom of receipts', c.note) +
@@ -953,7 +954,7 @@ const ACT = {
   rmphoto: () => { S.newPhoto = ''; const i = $('#eimg'); if (i) i.src = logoSrc(); toast('Picture will be removed when you save'); },
   editbiz: () => editBizSheet(),
   savebiz: async () => {
-    const v = { name: $('#bn').value.trim(), tagline: $('#bt').value, phone: $('#bp').value, location: $('#bl').value, momo: $('#bm').value, momoName: $('#bmn').value, bank: $('#bb').value, note: $('#bnote').value, word: $('#bw').value.trim().toLowerCase(), c1: $('#bc1').value, c2: $('#bc2').value, stock: $('#bs').value };
+    const v = { name: $('#bn').value.trim(), tagline: $('#bt').value, phone: $('#bp').value, phone2: $('#bp2').value.trim(), bizEmail: $('#be').value.trim(), location: $('#bl').value, momo: $('#bm').value, momoName: $('#bmn').value, bank: $('#bb').value, note: $('#bnote').value, word: $('#bw').value.trim().toLowerCase(), c1: $('#bc1').value, c2: $('#bc2').value, stock: $('#bs').value };
     if (!v.name) { toast('Enter the business name'); return; }
     const logo = S.newLogo;
     if (S.cache) S.cache.cfg = Object.assign({}, cfg(), v);

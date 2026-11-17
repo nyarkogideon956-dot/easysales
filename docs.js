@@ -105,8 +105,8 @@
     const m = wb ? null : docMoney(items, adj), total = m ? m.total : 0, paid = inv ? r2(doc.paid || 0) : 0, bal = r2(total - paid);
     const c1 = c.c1 || '#7A1F3D', mute = '#5B6B78', N = x => r2(x).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const st = inv ? (bal <= 0.004 ? ['PAID IN FULL', '#1E7B4F'] : paid > 0 ? ['PART PAID', '#B26A00'] : ['UNPAID', '#B3261E']) : null;
-    const th = 'style="text-align:right;padding:5px 6px;font-weight:700"', td = 'style="padding:5px 6px;border-bottom:1px solid #EEF0F4"', tdn = 'style="padding:5px 6px;border-bottom:1px solid #EEF0F4;text-align:right;white-space:nowrap"';
-    const h3 = t => '<div style="margin:12px 0 4px;font-weight:800;color:' + esc(c1) + ';font-size:12px;letter-spacing:.4px">' + t + '</div>';
+    const th = 'style="text-align:right;padding:4px 6px;font-weight:700"', td = 'style="padding:3px 6px;border-bottom:1px solid #EEF0F4"', tdn = 'style="padding:3px 6px;border-bottom:1px solid #EEF0F4;text-align:right;white-space:nowrap"';
+    const h3 = t => '<div style="margin:10px 0 3px;font-weight:800;color:' + esc(c1) + ';font-size:12px;letter-spacing:.4px">' + t + '</div>';
     const table = (rows, qtyHead) => '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><tr style="background:' + esc(c1) + ';color:#fff"><th style="text-align:left;padding:5px 6px">Description</th><th ' + th + '>' + qtyHead + '</th><th style="text-align:left;padding:5px 6px">Unit</th>' + (wb ? '' : '<th ' + th + '>Rate</th><th ' + th + '>Amount</th>') + '</tr>' +
       rows.map(i => '<tr><td ' + td + '>' + esc(i.p) + '</td><td ' + tdn + '>' + i.q + '</td><td ' + td + '>' + esc(i.un || '') + '</td>' + (wb ? '' : '<td ' + tdn + '>' + N(i.u) + '</td><td ' + tdn + '>' + N(i.q * i.u) + '</td>') + '</tr>').join('');
     const mats = items.filter(i => !i.l), labs = items.filter(i => i.l);
@@ -118,7 +118,7 @@
     if (doc.until && !wb) meta.push([inv ? 'Due date' : 'Valid until', doc.until]);
     if (doc.from) meta.push(['Our ref.', doc.from]);
     if (c.tin && adj.tax) meta.push(['TIN', c.tin]);
-    h += '<div style="display:flex;gap:10px;align-items:flex-start"><img src="' + logoSrc() + '" alt="" style="width:56px;height:56px;object-fit:contain"><div style="flex:1;min-width:0"><b style="font-size:15px;color:' + esc(c1) + '">' + esc(bizName()) + '</b><div style="font-size:10.5px;color:' + mute + '">' + esc([c.tagline, c.location, c.phone].filter(Boolean).join(' · ')) + '</div></div>' +
+    h += '<div style="display:flex;gap:10px;align-items:flex-start"><img src="' + logoSrc() + '" alt="" style="width:56px;height:56px;object-fit:contain"><div style="flex:1;min-width:0"><b style="font-size:15px;color:' + esc(c1) + '">' + esc(bizName()) + '</b><div style="font-size:10.5px;color:' + mute + '">' + esc([c.tagline, c.location, [c.phone, c.phone2].filter(Boolean).join(' / '), c.bizEmail].filter(Boolean).join(' · ')) + '</div></div>' +
       '<div style="text-align:right"><div style="font-size:15px;font-weight:800;color:' + esc(c1) + '">' + TITLE[doc.type] + '</div><div style="font-size:10.5px;color:' + mute + ';line-height:1.5">' + meta.map(x => '<b>' + x[0] + '</b> ' + esc(x[1])).join('<br>') + '</div></div></div>' +
       '<div style="height:4px;background:' + esc(c1) + ';margin:8px 0 2px;border-radius:2px"></div><div style="height:2px;background:' + esc(c.c2 || '#E07A1F') + ';margin-bottom:10px;border-radius:2px"></div>';
     // client box
@@ -126,10 +126,10 @@
       '<tr><td style="padding:5px 8px;color:' + mute + '">Site / location</td><td style="padding:5px 8px" colspan="3">' + esc(wb ? (doc.data.dest || doc.location || '') : (doc.location || '')) + '</td></tr></table>';
     // measured areas
     const rooms = doc.data.rooms || [];
-    const TY = { PB: 'Plasterboard', AC: 'Acoustic', POP: 'POP', PT: 'Partition wall' };
+    const TY = { PB: 'Plasterboard', AC: 'Acoustic', POP: 'POP', PT: 'Partition wall', PNT: 'Painting only' };
     const rm = r => r.m2 !== undefined ? +r.m2 : (+r.l || 0) * (+r.w || 0), rs = r => r.size || ((+r.l || 0) + ' x ' + (+r.w || 0) + ' m');
     if (!wb && rooms.length && c.showRooms === 'Yes') h += h3('MEASURED AREAS') + '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><tr style="background:#F1F3F6"><th style="text-align:left;padding:5px 6px">Area</th><th style="text-align:left;padding:5px 6px">Type</th><th ' + th + '>Size</th><th ' + th + '>m²</th></tr>' +
-      rooms.map(r => '<tr><td ' + td + '>' + esc(r.n || 'Room') + '</td><td ' + td + '>' + (TY[r.t] || 'Plasterboard') + (r.fr === 'wood' ? ' on wood' : '') + (r.c ? ' + cornice' : '') + (r.ins ? ' + insulation' : '') + '</td><td ' + tdn + '>' + esc(rs(r)) + '</td><td ' + tdn + '>' + r2(rm(r)) + '</td></tr>').join('') +
+      rooms.map(r => '<tr><td ' + td + '>' + esc(r.n || 'Room') + '</td><td ' + td + '>' + (TY[r.t] || 'Plasterboard') + (r.fr === 'wood' ? ' on wood' : '') + (r.c ? ' + cornice' : '') + (pmOf(r) ? ' + painting (' + PM[pmOf(r)].toLowerCase() + ')' : '') + (r.ins ? ' + insulation' : '') + '</td><td ' + tdn + '>' + esc(rs(r)) + '</td><td ' + tdn + '>' + r2(rm(r)) + '</td></tr>').join('') +
       '<tr><td colspan="3" style="padding:5px 6px;text-align:right;font-weight:700">Total area</td><td ' + tdn + '><b>' + r2(sum(rooms, rm)) + '</b></td></tr></table>';
     if (doc.title) h += '<div style="margin:12px 0 0;font-size:15px;font-weight:800;color:' + esc(c1) + ';text-transform:uppercase;letter-spacing:.4px">' + esc(doc.title) + '</div>';
     if (wb) {
@@ -137,27 +137,38 @@
         '<div style="margin-top:10px">Vehicle: <b>' + esc(doc.data.vehicle || '—') + '</b> · Driver: <b>' + esc(doc.data.driver || '—') + '</b></div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:28px;font-size:10.5px;color:' + mute + ';text-align:center"><div style="border-top:1px solid #999;padding-top:4px">Dispatched by</div><div style="border-top:1px solid #999;padding-top:4px">Driver</div><div style="border-top:1px solid #999;padding-top:4px">Received by</div></div>';
     } else {
-      if (mats.length) h += h3('MATERIALS' + (adj.clientMat ? ' (TO BE BOUGHT BY CLIENT, GUIDE PRICES)' : '')) + table(mats, 'Qty') + (m.trans ? '<tr><td colspan="4" ' + td + '>Transport</td><td ' + tdn + '>' + N(m.trans) + '</td></tr>' : '') + '</table>';
-      if (labs.length) h += h3('LABOUR / WORKMANSHIP') + table(labs, 'Qty') + '</table>';
-      if (!mats.length && m.trans) h += '<div style="text-align:right;margin-top:6px">Transport ' + N(m.trans) + '</div>';
+      const sub = t => '<tr><td colspan="5" style="padding:5px 6px 3px;background:#F1F5F9;font-weight:800;color:' + esc(c1) + ';font-size:10.5px;letter-spacing:.4px">' + t + '</td></tr>';
+      const rowsOf = list => list.map(i => '<tr><td ' + td + '>' + esc(i.p) + '</td><td ' + tdn + '>' + i.q + '</td><td ' + td + '>' + esc(i.un || '') + '</td><td ' + tdn + '>' + N(i.u) + '</td><td ' + tdn + '>' + N(i.q * i.u) + '</td></tr>').join('');
+      h += '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:8px"><tr style="background:' + esc(c1) + ';color:#fff"><th style="text-align:left;padding:4px 6px">Description</th><th ' + th + '>Qty</th><th style="text-align:left;padding:4px 6px">Unit</th><th ' + th + '>Rate</th><th ' + th + '>Amount (GH₵)</th></tr>' +
+        (mats.length ? sub('MATERIALS' + (adj.clientMat ? ' (CLIENT BUYS, GUIDE PRICES)' : '')) + rowsOf(mats) : '') + (m.trans ? '<tr><td colspan="4" ' + td + '>Transport</td><td ' + tdn + '>' + N(m.trans) + '</td></tr>' : '') +
+        (labs.length ? sub('LABOUR / WORKMANSHIP') + rowsOf(labs) : '') + '</table>';
       const row = (a, b, st2) => '<tr><td style="padding:4px 8px;' + (st2 || '') + '">' + a + '</td><td style="padding:4px 8px;text-align:right;white-space:nowrap;' + (st2 || '') + '">' + b + '</td></tr>';
-      h += '<table style="margin:10px 0 0 auto;border-collapse:collapse;font-size:12px;min-width:62%">';
+      h += '<table style="margin:6px 0 0 auto;border-collapse:collapse;font-size:11.5px;min-width:55%">';
       if (mats.length) h += row(adj.clientMat ? 'Materials (client buys)' : 'Materials &amp; transport', adj.clientMat ? '<s style="color:' + mute + '">' + N(m.mat) + '</s>' + (m.trans ? ' + ' + N(m.trans) : '') : N(m.mat + m.trans));
       if (labs.length) h += row('Labour', N(m.lab));
       if (m.disc) h += row('Discount' + (adj.discPct ? ' (' + (+adj.disc) + '%)' : ''), '- ' + N(m.disc), 'color:#B3261E');
       m.taxes.forEach(t => { h += row(t.n + ' (' + t.r + '%)', N(t.a), 'color:' + mute); });
-      h += row('<b>' + (adj.clientMat ? 'TOTAL PAYABLE TO US' : 'GRAND TOTAL') + '</b>', '<b>GH₵ ' + N(total) + '</b>', 'background:' + esc(c1) + ';color:#fff;font-size:14px');
+      h += row('<b>' + (adj.clientMat ? 'TOTAL PAYABLE TO US' : 'GRAND TOTAL') + '</b>', '<b>GH₵ ' + N(total) + '</b>', 'background:' + esc(c1) + ';color:#fff;font-size:15px;padding:6px 8px');
       if (inv) h += row('Paid so far', N(paid), 'color:#1E7B4F') + row('<b>BALANCE DUE</b>', '<b>GH₵ ' + N(Math.max(0, bal)) + '</b>', 'color:' + (bal > 0.004 ? '#B3261E' : '#1E7B4F') + ';font-size:13px');
       h += '</table>';
       if (inv && bal > 0.004 && doc.until) h += '<div style="margin-top:8px"><b>Please pay the balance by ' + esc(doc.until) + '.</b> Use <b>' + esc(doc.no || 'the invoice number') + '</b> as the payment reference.</div>';
+      h += '<div class="pp-cols" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:4px"><div>';
       if (!inv && total > 0 && build()) h += h3('PAYMENT PLAN' + (adj.clientMat ? ' (WORKMANSHIP)' : '')) + '<table style="width:100%;border-collapse:collapse;font-size:11.5px">' + plan(doc.type, total, adj.clientMat).map(x => '<tr><td ' + td + '>' + x[0] + '</td><td ' + tdn + '>' + x[1] + '%</td><td ' + tdn + '><b>' + N(x[2]) + '</b></td></tr>').join('') + '</table>';
-      if ((c.momo || c.bank) && (!inv || bal > 0.004)) h += '<div style="margin-top:12px;border:1.5px solid ' + esc(c1) + ';border-radius:8px;overflow:hidden"><div style="background:' + esc(c1) + ';color:#fff;font-weight:800;padding:4px 10px;font-size:11px;letter-spacing:.5px">HOW TO PAY</div><div style="padding:6px 10px;line-height:1.6">' +
+      if ((c.momo || c.bank) && (!inv || bal > 0.004)) h += '<div style="margin-top:10px;border:1.5px solid ' + esc(c1) + ';border-radius:8px;overflow:hidden"><div style="background:' + esc(c1) + ';color:#fff;font-weight:800;padding:4px 10px;font-size:11px;letter-spacing:.5px">HOW TO PAY</div><div style="padding:6px 10px;line-height:1.6">' +
         (c.momo ? 'Mobile Money: <b>' + esc(c.momo) + '</b>' + (c.momoName ? ' (' + esc(c.momoName) + ')' : '') : '') + (c.momo && c.bank ? '<br>' : '') + (c.bank ? 'Bank: <b>' + esc(c.bank) + '</b>' : '') + '<div style="font-size:10.5px;color:' + mute + '">Use <b>' + esc(doc.no || 'the document number') + '</b> as the reference and send us a screenshot after paying.</div></div></div>';
+      h += '</div><div>';
     }
     if (doc.data.note) h += '<div style="margin-top:8px"><b>Notes:</b> ' + esc(doc.data.note) + '</div>';
+    const sc = doc.data.scope;
+    if (sc && !wb && (sc.inc.length || sc.exc.length)) h += h3('WHAT THIS PRICE COVERS') + '<table style="width:100%;border-collapse:collapse;font-size:11px">' +
+      (sc.inc.length ? '<tr><td style="padding:2px 0;width:96px;vertical-align:top;color:#1E7B4F;font-weight:700">✓ Included</td><td style="padding:3px 0">' + sc.inc.map(esc).join(', ') + '</td></tr>' : '') +
+      (sc.exc.length ? '<tr><td style="padding:2px 0;width:96px;vertical-align:top;color:#B3261E;font-weight:700">✗ Not included</td><td style="padding:3px 0">' + sc.exc.map(esc).join(', ') + '</td></tr>' : '') + '</table>';
     const terms = String(doc.data.terms || '').split(/\n|(?<=\.)\s+(?=[A-Z])/).map(x => x.trim()).filter(Boolean);
-    if (terms.length && !wb) h += h3('TERMS &amp; CONDITIONS') + '<ul style="margin:0;padding-left:18px;font-size:11px;line-height:1.5">' + terms.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>';
-    if (!inv && !wb) h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:30px;font-size:10.5px;color:' + mute + ';text-align:center"><div style="border-top:1px solid #999;padding-top:4px">Client name, signature &amp; date</div><div style="border-top:1px solid #999;padding-top:4px">For ' + esc(bizName()) + '</div></div>';
+    if (terms.length && !wb) h += h3('TERMS &amp; CONDITIONS') + '<ul style="margin:0;padding-left:16px;font-size:10.5px;line-height:1.45">' + terms.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>';
+    const wm = parseFloat(c.warranty) || 0, fd = parseFloat(c.fixDays) || 0;
+    if (inv && (wm > 0 || fd > 0)) h += h3('OUR PROMISE') + '<div style="font-size:10.5px;line-height:1.5">' + (wm > 0 ? '<b>Warranty: ' + wm + ' month' + (wm === 1 ? '' : 's') + '</b> on our workmanship from the day the work is finished. ' : '') + (fd > 0 ? 'Please report any problem within <b>' + fd + ' day' + (fd === 1 ? '' : 's') + '</b> of handover so we can fix it quickly.' : '') + '</div>';
+    if (!wb) h += '</div></div>';
+    if (!inv && !wb) h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:26px;font-size:10.5px;color:' + mute + ';text-align:center"><div style="border-top:1px solid #999;padding-top:4px">Client name, signature &amp; date</div><div style="border-top:1px solid #999;padding-top:4px">For ' + esc(bizName()) + '</div></div>';
     h += '<div style="margin-top:12px;text-align:center;font-size:9.5px;color:#9AA5B1">' + POWERED + '</div></div>';
     return h;
   }
@@ -182,6 +193,7 @@
     sheet('<h2>' + T[t] + ' ' + esc(doc.no) + ' <span class="badge ' + st[1] + '">' + st[0] + '</span></h2>' + mine + paperHTML(doc, false) +
       '<div style="display:grid;gap:8px;margin-top:12px">' + acts +
       '<div class="row"><button class="btn grow" data-act="dPrint">Print / PDF</button><button class="btn grow" data-act="dWa">WhatsApp</button></div>' +
+      (t === 'INV' && KL.smallPrint ? '<button class="btn block" style="margin-top:8px" data-act="spDoc">🖨 Small receipt printer</button>' : '') +
       (isOwner() ? '<button class="btn danger block" data-act="dDel">Delete</button>' : '') + '</div>');
   }
   function remaining(inv) {
@@ -190,15 +202,22 @@
   }
 
   /* ---------- the editor ---------- */
+  const scopeList = () => String(cfg().scopeList || 'Ceiling, Skimming, Painting, Electricals, POP').split(',').map(x => x.trim()).filter(Boolean).slice(0, 15);
+  function scopeHTML(e) {
+    if (e.type === 'WB' || !build()) return '';
+    const inc = e.scope ? e.scope.inc : (e.no ? [] : scopeList().slice(0, 2));
+    return '<div class="card" style="padding:12px;margin-top:10px"><b>What this price covers</b><p class="small muted" style="margin:2px 0 6px">Ticked = included. Not ticked = printed as not included.</p><div style="display:flex;flex-wrap:wrap;gap:6px 14px">' +
+      scopeList().map(s => '<label style="margin:0;display:flex;align-items:center;gap:6px;font-weight:600"><input data-sc="' + esc(s) + '" type="checkbox" style="width:auto;min-height:0"' + (inc.some(x => kk(x) === kk(s)) ? ' checked' : '') + '> ' + esc(s) + '</label>').join('') + '</div></div>';
+  }
   function blank(type) {
     const c = cfg();
     return { type, no: '', customer: '', phone: '', location: '', title: '', from: '', items: [], terms: type === 'INV' ? (c.invTerms || '') : type === 'WB' ? '' : (c.estTerms || ''), note: '', vehicle: '', driver: '', dest: '', cash: '', momo: '', rooms: null, trans: '', disc: '', discPct: false, tax: false, clientMat: false };
   }
   ACT.dNew = d => { D.edit = Object.assign(blank(d.k || D.type), d.pre || {}); editSheet(); };
-  ACT.dEdit = () => { const v = D.view; D.edit = Object.assign(blank(v.type), { no: v.no, customer: v.customer, phone: v.phone, location: v.location, title: v.title, from: v.from, items: (v.data.items || []).map(i => Object.assign({}, i)), terms: v.data.terms || '', note: v.data.note || '', vehicle: v.data.vehicle || '', driver: v.data.driver || '', dest: v.data.dest || '', rooms: v.data.rooms || null }, adjOf(v)); editSheet(); };
+  ACT.dEdit = () => { const v = D.view; D.edit = Object.assign(blank(v.type), { no: v.no, customer: v.customer, phone: v.phone, location: v.location, title: v.title, from: v.from, items: (v.data.items || []).map(i => Object.assign({}, i)), terms: v.data.terms || '', note: v.data.note || '', vehicle: v.data.vehicle || '', driver: v.data.driver || '', dest: v.data.dest || '', rooms: v.data.rooms || null, scope: v.data.scope || null }, adjOf(v)); editSheet(); };
   ACT.dConvert = d => {
     const v = D.view, k = d.k;
-    const e = Object.assign(blank(k), { customer: v.customer, phone: v.phone, location: v.location, title: v.title, from: v.no, items: (v.data.items || []).map(i => Object.assign({}, i)), rooms: v.data.rooms || null }, k === 'WB' ? {} : adjOf(v));
+    const e = Object.assign(blank(k), { customer: v.customer, phone: v.phone, location: v.location, title: v.title, from: v.no, items: (v.data.items || []).map(i => Object.assign({}, i)), rooms: v.data.rooms || null, scope: v.data.scope || null }, k === 'WB' ? {} : adjOf(v));
     if (k === 'WB') { e.items = remaining(v).filter(i => i.q > 0); e.dest = v.location; }
     else if (k === 'INV' && v.type === 'EST') e.terms = cfg().invTerms || '';
     D.edit = e; editSheet();
@@ -231,6 +250,7 @@
         (!build() ? '' : '<label style="display:flex;align-items:center;gap:8px;font-weight:600;margin-top:6px"><input id="dcm" type="checkbox" style="width:auto;min-height:0"' + (e.clientMat ? ' checked' : '') + '> Client buys the materials (we charge labour only)</label>') +
         '<div id="dtot" style="margin-top:10px">' + totalsHTML(e) + '</div></div>') +
       (e.type === 'INV' && !e.no ? '<div class="picker"><div><label>Paid now: cash</label><input id="dcash" type="number" inputmode="decimal" value="' + esc(e.cash) + '" placeholder="0"></div><div><label>Paid now: MoMo</label><input id="dmomo" type="number" inputmode="decimal" value="' + esc(e.momo) + '" placeholder="0"></div></div>' : '') +
+      scopeHTML(e) +
       (wb ? '' : '<label>Terms</label><textarea id="dterms" rows="3" style="width:100%;border:1.5px solid var(--line);border-radius:12px;padding:10px;font:inherit">' + esc(e.terms) + '</textarea>') +
       '<label>Note (optional)</label><input id="dnote" value="' + esc(e.note) + '">' +
       '<br><button class="btn primary block" data-act="dPreview">Preview</button>');
@@ -255,6 +275,7 @@
     if ($('#dterms')) e.terms = $('#dterms').value; e.note = $('#dnote').value.trim();
     if ($('#dcash')) e.cash = $('#dcash').value; if ($('#dmomo')) e.momo = $('#dmomo').value;
     document.querySelectorAll('[data-di]').forEach(el => { const i = e.items[+el.dataset.n]; if (!i) return; const k = el.dataset.di; i[k] = k === 'l' ? (el.checked ? 1 : 0) : (k === 'p' || k === 'un') ? el.value : el.value === '' ? '' : +el.value; });
+    if (document.querySelector('[data-sc]')) { const inc = [], exc = []; document.querySelectorAll('[data-sc]').forEach(el => (el.checked ? inc : exc).push(el.dataset.sc)); e.scope = { inc, exc }; }
     readExtras();
   }
   const live = () => { const el = $('#dtot'); if (el && D.edit) el.innerHTML = totalsHTML(D.edit); };
@@ -277,10 +298,22 @@
     if (!e.customer) { toast('Enter the customer'); return; }
     e.items = e.items.filter(i => String(i.p || '').trim());
     if (!e.items.length) { toast('Add at least one item'); editSheet(); return; }
+    // a new item typed by hand: offer once to keep it in the product list (owner only, with internet)
+    if (S.session && S.session.role === 'admin' && navigator.onLine && e.type !== 'WB') {
+      const known = products().map(p => kk(p.name)), asked = (D.askedNew = D.askedNew || {});
+      const fresh = e.items.filter(i => !i.l && +i.u > 0 && known.indexOf(kk(i.p)) < 0 && !asked[kk(i.p)]);
+      if (fresh.length) {
+        fresh.forEach(i => { asked[kk(i.p)] = 1; });
+        if (confirm('Save ' + (fresh.length === 1 ? '"' + fresh[0].p + '"' : fresh.length + ' new items (' + fresh.map(i => i.p).join(', ') + ')') + ' to your product list, so next time ' + (fresh.length === 1 ? 'it is' : 'they are') + ' there with the price?')) {
+          Promise.all(fresh.map(i => api('admin', { op: 'saveProduct', name: String(i.p).trim(), price: +i.u, unit: i.un || '' }).catch(() => null)))
+            .then(rs => { const last = rs.filter(r => r && r.ok && r.lists).pop(); if (last) { S.lists = last.lists; KL.kvSet('lists', last.lists).catch(() => {}); } toast('Saved to your product list'); });
+        }
+      }
+    }
     if (e.items.some(i => !(+i.q > 0) || (e.type !== 'WB' && !(+i.u >= 0)))) { toast('Check quantities and prices'); editSheet(); return; }
     const total = e.type === 'WB' ? 0 : docMoney(e.items, e).total, paid = r2((+e.cash || 0) + (+e.momo || 0));
     if (e.type === 'INV' && paid > total + 0.001) { toast('Paid is more than the total'); editSheet(); return; }
-    const doc = { type: e.type, no: e.no || 'New', date: today(), customer: e.customer, phone: e.phone, location: e.location, title: e.title, from: e.from, paid, data: { items: e.items, terms: e.terms, note: e.note, vehicle: e.vehicle, driver: e.driver, dest: e.dest, rooms: e.rooms, adj: { trans: +e.trans || 0, disc: +e.disc || 0, discPct: e.discPct, tax: e.tax, clientMat: e.clientMat } } };
+    const doc = { type: e.type, no: e.no || 'New', date: today(), customer: e.customer, phone: e.phone, location: e.location, title: e.title, from: e.from, paid, data: { items: e.items, terms: e.terms, note: e.note, vehicle: e.vehicle, driver: e.driver, dest: e.dest, rooms: e.rooms, scope: e.scope || null, adj: { trans: +e.trans || 0, disc: +e.disc || 0, discPct: e.discPct, tax: e.tax, clientMat: e.clientMat } } };
     sheet('<h2>Check before saving</h2><p class="small muted" style="margin-top:0">This is exactly what your customer will see.</p>' + paperHTML(doc, true) +
       '<div class="row" style="margin-top:12px"><button class="btn grow" data-act="dBack">Edit</button><button class="btn primary grow" data-act="dSave">Confirm and save</button></div>');
   };
@@ -288,7 +321,7 @@
   ACT.dSave = async (d, btn) => {
     const e = D.edit; if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
     try {
-      const r = await api('docs', { op: 'save', type: e.type, no: e.no, customer: e.customer, phone: e.phone, location: e.location, title: e.title, from: e.from, items: e.items, terms: e.terms, note: e.note, vehicle: e.vehicle, driver: e.driver, dest: e.dest, rooms: e.rooms, cash: +e.cash || 0, momo: +e.momo || 0, trans: +e.trans || 0, disc: +e.disc || 0, discPct: e.discPct, tax: e.tax, clientMat: e.clientMat });
+      const r = await api('docs', { op: 'save', type: e.type, no: e.no, customer: e.customer, phone: e.phone, location: e.location, title: e.title, from: e.from, items: e.items, terms: e.terms, note: e.note, vehicle: e.vehicle, driver: e.driver, dest: e.dest, rooms: e.rooms, scope: e.scope || null, cash: +e.cash || 0, momo: +e.momo || 0, trans: +e.trans || 0, disc: +e.disc || 0, discPct: e.discPct, tax: e.tax, clientMat: e.clientMat });
       if (!r.ok) { toast(errText(r.error)); if (btn) { btn.disabled = false; btn.textContent = 'Confirm and save'; } return; }
       toast(T[e.type] + ' ' + r.doc.no + ' saved'); D.edit = null; D.type = r.doc.type;
       await loadDocs(); const doc = findDoc(r.doc.no) || r.doc; viewSheet(doc);
@@ -334,7 +367,12 @@
   ACT.dPrint = () => {
     const v = D.view; let host = $('#printdoc'); if (host) host.remove();
     host = document.createElement('div'); host.id = 'printdoc'; host.innerHTML = paperHTML(v, false); document.body.appendChild(host);
-    if (!$('#printcss')) { const st = document.createElement('style'); st.id = 'printcss'; st.textContent = '#printdoc{display:none}@media print{body>*:not(#printdoc){display:none!important}#printdoc{display:block!important;padding:10mm}#printdoc .paper{border:0!important;font-size:12pt}@page{size:A4;margin:10mm}}'; document.head.appendChild(st); }
+    host.style.cssText = 'display:block;position:absolute;left:-9999px;top:0;width:194mm';
+    const pp = host.querySelector('.paper'); if (pp) pp.style.zoom = '';
+    const avail = 281 * 96 / 25.4 - 4, hgt = pp ? pp.scrollHeight : 0;
+    if (pp && hgt > avail && v.type !== 'WB') pp.style.zoom = String(Math.max(0.72, Math.floor(avail / hgt * 100) / 100));
+    host.style.cssText = '';
+    if (!$('#printcss2')) { const st = document.createElement('style'); st.id = 'printcss2'; st.textContent = '#printdoc{display:none}@media print{body>*:not(#printdoc){display:none!important}#printdoc{display:block!important;padding:0}#printdoc .paper{border:0!important;border-radius:0!important;padding:0!important}#printdoc .paper *{-webkit-print-color-adjust:exact;print-color-adjust:exact}html,body{background:#fff!important}@page{size:A4;margin:8mm}}'; document.head.appendChild(st); }
     document.title = T[v.type] + ' ' + v.no + ' - ' + v.customer;
     setTimeout(() => { window.print(); document.title = bizName(); }, 80);
     toast('Choose "Save as PDF" to keep a PDF');
@@ -360,6 +398,7 @@
   KL.docs = { state: D, load: loadDocs, status: status, open: no => { const d = findDoc(no); if (d) viewSheet(d); } };
   // a room or wall: rectangle, L-shape (minus the cut-out corner) or your own m²; partitions are walls (length x height, minus doors)
   function areaOf(r) { return r.t === 'PT' ? 0 : geom(r).area; }
+  const ceilOf = r => r.t === 'PT' || r.t === 'PNT' ? 0 : geom(r).area;
   function perimOf(r) { if (r.t === 'PT') return 0; return r.s === 'X' ? 4 * Math.sqrt(Math.max(0, +r.a || 0)) : 2 * ((+r.l || 0) + (+r.w || 0)); }
   function wallOf(r, R) { const h = +r.h || +R.pt_height || 3; return Math.max(0, (+r.l || 0) * h - (Math.round(+r.d || 0)) * (+R.pt_door_w || 0.9) * (+R.pt_door_h || 2.1)); }
   function sizeText(r, R) {
@@ -367,7 +406,16 @@
     if (r.s === 'X') return 'own m²';
     return (+r.l || 0) + ' x ' + (+r.w || 0) + ' m' + (r.s === 'L' ? ' less ' + (+r.cl || 0) + ' x ' + (+r.cw || 0) : '');
   }
-  const TYPE = { PB: 'Plasterboard', AC: 'Acoustic', POP: 'POP', PT: 'Partition wall' };
+  const TYPE = { PB: 'Plasterboard', AC: 'Acoustic', POP: 'POP', PT: 'Partition wall', PNT: 'Painting only' };
+  // painting on a room: '' none, C ceiling, W walls, CW ceiling + walls (old estimates used p: true = ceiling)
+  const pmOf = r => r.pm !== undefined ? r.pm : r.p ? 'C' : (r.t === 'PNT' ? 'CW' : '');
+  const PM = { '': 'No painting', C: 'Ceiling only', W: 'Walls only', CW: 'Ceiling + walls' };
+  function paintOf(r, R) {
+    const m = pmOf(r); if (!m || r.t === 'PT') return { ceil: 0, wall: 0 };
+    const g = geom(r), h = +r.wh || +R.paint_wall_h || 3;
+    const wall = m.indexOf('W') >= 0 ? Math.max(0, g.walls * h - (Math.round(+r.dr || 0)) * (+R.paint_door || 2) - (Math.round(+r.wn || 0)) * (+R.paint_window || 1.5)) : 0;
+    return { ceil: m.indexOf('C') >= 0 ? g.area : 0, wall };
+  }
   KL.estArea = areaOf;
   // the K-Gabs estimator: ceilings counted room by room; plasterboard on a metal structure or on wood noggings
   function geom(r) {
@@ -383,7 +431,7 @@
     const ceil = x => Math.ceil(r2(x) - 1e-9), out = [];
     const wP = (wastePb === undefined ? n('pb_waste') : +wastePb) / 100, wA = (wasteAc === undefined ? n('ac_waste') : +wasteAc) / 100, wM = n('metal_waste') / 100;
     const sheetA = n('pb_board_m2') || 2.88, sides = Math.max(1, Math.min(2, Math.round(n('pt_sides')) || 2));
-    const t = { pb: 0, wood: 0, ac: 0, pop: 0, popCorn: 0, pbMain: 0, pbOmega: 0, pbAngle: 0, pbHang: 0, acMain: 0, acAngle: 0, acHang: 0, angleWalls: 0, corn: 0, ptArea: 0, ptBoard: 0, ptStuds: 0, ptTrack: 0, ptIns: 0 };
+    const t = { pb: 0, wood: 0, ac: 0, pop: 0, popCorn: 0, pbMain: 0, pbOmega: 0, pbAngle: 0, pbHang: 0, acMain: 0, acAngle: 0, acHang: 0, angleWalls: 0, corn: 0, paint: 0, paintC: 0, paintW: 0, ptArea: 0, ptBoard: 0, ptStuds: 0, ptTrack: 0, ptIns: 0 };
     (rooms || []).forEach(r => {
       const ty = r.t || 'PB';
       if (ty === 'PT') {
@@ -395,6 +443,8 @@
         return;
       }
       const g = geom(r); if (!g.area) return;
+      { const pa = paintOf(r, R); t.paint += pa.ceil + pa.wall; t.paintC += pa.ceil; t.paintW += pa.wall; }
+      if (ty === 'PNT') return;   // painting only: no ceiling materials
       if (ty === 'POP') { t.pop += g.area; if (r.c) t.popCorn += g.walls; return; }
       if (ty === 'PB' && frameOf(r, frame) === 'wood') { t.pb += g.area; t.wood += g.area; }
       else if (ty === 'PB') {
@@ -436,6 +486,11 @@
       add('ac_angle_item', t.acAngle);
     }
     if (t.corn) add('cornice_item', t.corn);
+    if (t.paint) {
+      const waste = 1 + (n('paint_waste') || 0) / 100;
+      add('paint_item', t.paint * (n('paint_coats') || 2) / (n('paint_cover') || 10) * waste / (n('paint_bucket') || 18), 'buckets');
+      if (!(lab && lab.noPrimer)) add('primer_item', t.paint * (n('primer_coats') || 1) / (n('primer_cover') || 8) * waste / (n('primer_bucket') || 18), 'buckets');
+    }
     if (t.pop) { add('pop_item', t.pop * n('pop_kg_m2') / (n('pop_bag') || 25), 'bags'); add('pop_sisal_item', t.pop * n('pop_sisal_m2'), 'kg'); add('pop_wire_item', t.pop * n('pop_wire_m2'), 'kg'); if (t.popCorn) add('pop_corn_item', t.popCorn, 'm'); }
     const hang = (pbHang ? t.pbHang : 0) + t.acHang;
     if (hang && n('wire_per_hanger') > 0) add('wire_item', hang * n('wire_per_hanger'), 'm');
@@ -454,10 +509,12 @@
     L('lab_pop_item', t.pop, rt('lab_pop_rate'));
     if (t.popCorn) L('lab_popc_item', ceil(t.popCorn), rt('lab_popc_rate'), 'm');
     L('lab_pt_item', t.ptArea, rt('lab_pt_rate'));
-    return { lines: merged, areaPb: r2(t.pb), areaWood: r2(t.wood), areaAc: r2(t.ac), areaPop: r2(t.pop), areaPt: r2(t.ptArea), area: r2(t.pb + t.ac + t.pop) };
+    if (t.paint && lab.paintBy === 'm2') L('lab_paint_item', t.paint, rt('lab_paint_rate'));
+    else if (t.paint && +lab.paintJob > 0) merged.push({ p: String(R.lab_paint_item || 'Painting'), q: 1, u: +lab.paintJob, un: 'job', l: 1, labour: true });
+    return { lines: merged, areaPb: r2(t.pb), areaWood: r2(t.wood), areaAc: r2(t.ac), areaPop: r2(t.pop), areaPt: r2(t.ptArea), areaPaint: r2(t.paint), areaPaintC: r2(t.paintC), areaPaintW: r2(t.paintW), area: r2(t.pb + t.ac + t.pop) };
   }
   KL.estimate = calc;
-  const LABK = ['lab_struct_rate', 'lab_skim_rate', 'lab_ac_rate', 'lab_gen_rate', 'lab_cornice_rate', 'lab_pop_rate', 'lab_popc_rate', 'lab_pt_rate'];
+  const LABK = ['lab_struct_rate', 'lab_skim_rate', 'lab_ac_rate', 'lab_gen_rate', 'lab_cornice_rate', 'lab_pop_rate', 'lab_popc_rate', 'lab_pt_rate', 'lab_paint_rate'];
   ACT.dEstimator = async () => {
     readEdit();
     const R = await getRules(); if (!R) { toast('Connect to the internet once to load the estimator rules'); return; }
@@ -470,9 +527,10 @@
     if (!D.est || !$('#ewp')) return;
     D.est.wp = $('#ewp').value; D.est.wa = $('#ewa').value; D.est.trans = $('#etr').value;
     document.querySelectorAll('[data-el]').forEach(el => { D.est.lab[el.dataset.el] = el.value; });
-    document.querySelectorAll('[data-er]').forEach(el => { const r = D.est.rooms[+el.dataset.n]; if (!r) return; const k = el.dataset.er; r[k] = (k === 'c' || k === 'ins') ? el.checked : el.value; });
+    document.querySelectorAll('[data-el2=noPrimer]').forEach(el => { D.est.lab.noPrimer = !el.checked; });
+    document.querySelectorAll('[data-er]').forEach(el => { const r = D.est.rooms[+el.dataset.n]; if (!r) return; const k = el.dataset.er; r[k] = (k === 'c' || k === 'ins') ? el.checked : el.value; if (k === 'pm') delete r.p; });
   }
-  document.addEventListener('change', ev => { const t = ev.target; if (D.est && t.dataset && (t.dataset.er === 't' || t.dataset.er === 's')) { readEst(); estSheet(); } });
+  document.addEventListener('change', ev => { const t = ev.target; if (D.est && t.dataset && (t.dataset.er === 't' || t.dataset.er === 's' || t.dataset.er === 'pm' || t.dataset.el === 'paintBy' || t.dataset.el2 === 'noPrimer')) { readEst(); estSheet(); } });
   function roomHTML(r, n) {
     const f = (k, lab, ph) => '<div class="grow"><label style="margin:0">' + lab + '</label><input data-er="' + k + '" data-n="' + n + '" type="number" inputmode="decimal" value="' + esc(r[k] == null ? '' : r[k]) + '"' + (ph ? ' placeholder="' + ph + '"' : '') + '></div>';
     const pt = r.t === 'PT';
@@ -483,21 +541,28 @@
     else if (r.s === 'X') h += '<div class="row" style="margin-top:6px">' + f('a', 'Area (m²)') + '</div>';
     else h += '<div class="row" style="margin-top:6px">' + f('l', 'Length (m)') + f('w', 'Width (m)') + '</div>' + (r.s === 'L' ? '<p class="small muted" style="margin:6px 0 0">Cut-out corner (the part that is not ceiling):</p><div class="row">' + f('cl', 'Cut length') + f('cw', 'Cut width') + '</div>' : '');
     if ((r.t || 'PB') === 'PB') { const f = frameOf(r, D.est.frame); h += '<div class="chips" style="margin-top:6px"><button class="chip ' + (f === 'metal' ? 'on' : '') + '" data-act="eRoomFrame" data-n="' + n + '" data-v="metal">Metal</button><button class="chip ' + (f === 'wood' ? 'on' : '') + '" data-act="eRoomFrame" data-n="' + n + '" data-v="wood">Wood noggings</button></div>'; }
-    if (!pt) h += '<label style="margin:6px 0 0;display:flex;align-items:center;gap:6px"><input data-er="c" data-n="' + n + '" type="checkbox" style="width:auto;min-height:0"' + (r.c ? ' checked' : '') + '> Cornice</label>';
-    return h + (areaOf(r) ? '<div class="small muted" style="text-align:right">' + r2(areaOf(r)) + ' m²</div>' : pt && wallOf(r, D.rules) ? '<div class="small muted" style="text-align:right">' + r2(wallOf(r, D.rules)) + ' m² wall</div>' : '') + '</div>';
+    if (!pt && r.t !== 'PNT') h += '<label style="margin:6px 0 0;display:flex;align-items:center;gap:6px"><input data-er="c" data-n="' + n + '" type="checkbox" style="width:auto;min-height:0"' + (r.c ? ' checked' : '') + '> Cornice</label>';
+    if (!pt) { const m = pmOf(r); h += '<div class="row" style="margin-top:6px;gap:8px"><select data-er="pm" data-n="' + n + '" class="grow">' + Object.keys(PM).map(k => '<option value="' + k + '"' + (m === k ? ' selected' : '') + '>' + PM[k] + '</option>').join('') + '</select></div>' +
+      (m.indexOf('W') >= 0 ? '<div class="row" style="margin-top:6px">' + f('wh', 'Wall height (m)', String(D.rules.paint_wall_h || 3)) + f('dr', 'Doors') + f('wn', 'Windows') + '</div>' : ''); }
+    const pa = paintOf(r, D.rules);
+    return h + (r.t === 'PNT' ? '<div class="small muted" style="text-align:right">' + r2(pa.ceil + pa.wall) + ' m² to paint</div>' : areaOf(r) ? '<div class="small muted" style="text-align:right">' + r2(areaOf(r)) + ' m²' + (pa.wall ? ' · walls ' + r2(pa.wall) + ' m²' : '') + '</div>' : pt && wallOf(r, D.rules) ? '<div class="small muted" style="text-align:right">' + r2(wallOf(r, D.rules)) + ' m² wall</div>' : '') + '</div>';
   }
   function estSheet() {
     const E = D.est, R = D.rules, res = calc(E.rooms, R, E.wp, E.wa, E.lab, E.frame);
     const LB = [['lab_struct_rate', 'Structure works /m²'], ['lab_skim_rate', 'Skimming /m²'], ['lab_ac_rate', 'Acoustic fixing /m²'], ['lab_gen_rate', 'General labour /m²'], ['lab_cornice_rate', 'Cornice labour /piece'], ['lab_pop_rate', 'POP ceiling /m²'], ['lab_popc_rate', 'POP cornice /m'], ['lab_pt_rate', 'Partition works /m²']];
     const used = t => E.rooms.some(r => (r.t || 'PB') === t);
-    const show = LB.filter(x => (x[0] === 'lab_pop_rate' || x[0] === 'lab_popc_rate') ? used('POP') : x[0] === 'lab_pt_rate' ? used('PT') : x[0] === 'lab_ac_rate' ? used('AC') : x[0] === 'lab_skim_rate' ? used('PB') : true);
+    const show = LB.filter(x => (x[0] === 'lab_pop_rate' || x[0] === 'lab_popc_rate') ? used('POP') : x[0] === 'lab_pt_rate' ? used('PT') : x[0] === 'lab_paint_rate' ? E.rooms.some(r => r.p) : x[0] === 'lab_ac_rate' ? used('AC') : x[0] === 'lab_skim_rate' ? used('PB') : true);
     const parts = [[r2(res.areaPb - res.areaWood), 'plasterboard (metal)'], [res.areaWood, 'plasterboard on wood'], [res.areaAc, 'acoustic'], [res.areaPop, 'POP'], [res.areaPt, 'partition wall']].filter(x => x[0] > 0).map(x => x[0] + ' m² ' + x[1]);
     const hasPb = E.rooms.some(r => (r.t || 'PB') === 'PB');
-    sheet('<h2>Estimator</h2><p class="small muted" style="margin-top:0">Ceilings, POP and partitions. Rules come from Setup → Estimator rules.</p>' +
+    sheet('<h2>Estimator</h2><p class="small muted" style="margin-top:0">Ceilings, POP, partitions and painting. Rules come from Setup → Estimator rules.</p>' +
       (hasPb ? '<div class="card" style="padding:10px 12px;margin:6px 0"><b>Plasterboard is fixed on</b><div class="chips" style="margin-top:6px"><button class="chip ' + (E.frame !== 'wood' ? 'on' : '') + '" data-act="eFrame" data-v="metal">Metal structure</button><button class="chip ' + (E.frame === 'wood' ? 'on' : '') + '" data-act="eFrame" data-v="wood">Wood noggings</button></div><p class="small muted" style="margin:4px 0 0">' + (E.frame === 'wood' ? 'Wood noggings: boards, screws, tape and compound only. No main channel, Omega, wall angle, tapping screws or wall fixings, and no Structure works labour (the client fixes the wood).' : 'Metal: main channel, Omega, wall angle and the rest. A room can be changed to wood below.') + '</p></div>' : '') +
       E.rooms.map(roomHTML).join('') +
       '<div class="row" style="gap:8px"><button class="btn sm grow" data-act="eAdd" data-t="">+ Add room</button><button class="btn sm grow" data-act="eAdd" data-t="PT">+ Add wall</button><button class="btn sm violet grow" data-act="ePaste">Paste sizes</button></div>' +
-      '<div class="picker"><div><label>Board waste %</label><input id="ewp" type="number" inputmode="decimal" value="' + esc(E.wp) + '"></div><div><label>Tile waste %</label><input id="ewa" type="number" inputmode="decimal" value="' + esc(E.wa) + '"></div></div>' +
+      (E.rooms.every(r => r.t === 'PNT') ? '' : '<div class="picker"><div><label>Board waste %</label><input id="ewp" type="number" inputmode="decimal" value="' + esc(E.wp) + '"></div><div><label>Tile waste %</label><input id="ewa" type="number" inputmode="decimal" value="' + esc(E.wa) + '"></div></div>') +
+      (E.rooms.some(r => pmOf(r)) ? '<div class="card" style="padding:10px 12px;margin:10px 0 0"><b>Painting' + (res.areaPaint ? ' · ' + res.areaPaint + ' m²' + (res.areaPaintW ? ' (ceiling ' + res.areaPaintC + ', walls ' + res.areaPaintW + ')' : '') : '') + '</b>' +
+        '<div class="row" style="gap:8px;margin-top:6px"><div class="grow"><label style="margin:0">Painting charge (GH₵)</label><input data-el="' + (E.lab.paintBy === 'm2' ? 'lab_paint_rate' : 'paintJob') + '" type="number" inputmode="decimal" value="' + esc(E.lab.paintBy === 'm2' ? E.lab.lab_paint_rate : E.lab.paintJob) + '" placeholder="0"></div>' +
+        '<div style="width:130px"><label style="margin:0">Charged</label><select data-el="paintBy"><option value="job"' + (E.lab.paintBy !== 'm2' ? ' selected' : '') + '>for the job</option><option value="m2"' + (E.lab.paintBy === 'm2' ? ' selected' : '') + '>per m²</option></select></div></div>' +
+        '<label style="margin:8px 0 0;display:flex;align-items:center;gap:6px"><input data-el2="noPrimer" type="checkbox" style="width:auto;min-height:0"' + (E.lab.noPrimer ? '' : ' checked') + '> Add primer</label></div>' : '') +
       '<h3 style="margin:14px 0 0">Labour rates for this job</h3><p class="small muted" style="margin:2px 0 0">0 means no line. Defaults come from Setup.</p><div class="picker">' + show.map(x => '<div><label>' + x[1] + '</label><input data-el="' + x[0] + '" type="number" inputmode="decimal" value="' + esc(E.lab[x[0]]) + '"></div>').join('') + '<div><label>Transport (GH₵)</label><input id="etr" type="number" inputmode="decimal" value="' + esc(E.trans) + '"></div></div>' +
       '<button class="btn block" data-act="eCalc" style="margin-top:8px">Work it out</button>' +
       '<div class="card" style="margin-top:8px"><h3>Materials' + (parts.length ? ' · ' + parts.join(' · ') : '') + '</h3>' +
@@ -515,8 +580,8 @@
       const pairs = [...lo.matchAll(new RegExp(num + '\\s*(?:x|×|\\*|by)\\s*' + num, 'g'))].map(m => [+m[1], +m[2]]);
       const m2 = lo.match(new RegExp(num + '\\s*(?:m2|m²|sqm|sq\\.?\\s*m|square)'));
       const dm = lo.match(/(\d+)\s*doors?/), hm = lo.match(new RegExp('(?:\\bh|height)\\s*' + num));
-      const name = line.split(/\d/)[0].replace(/\b(pop|ac|acoustic|t-?grid|tiles?|pt|partition|drywall|pb|plasterboard|plaster|board|ceiling|cornice|with|and|on|l-?shape|wood|wooden|noggings?|noggins?|metal)\b/gi, '').trim().replace(/[\s\-:,]+$/, '').trim();
-      const r = newRoom(1, t); r.c = /cornice|\bcorn\b|\+\s*c\b/.test(lo); r.ins = /insul|\bins\b/.test(lo);
+      const name = line.split(/\d/)[0].replace(/\b(pop|ac|acoustic|t-?grid|tiles?|pt|partition|drywall|pb|plasterboard|plaster|board|ceiling|cornice|paint|painting|painted|with|and|on|l-?shape|wood|wooden|noggings?|noggins?|metal)\b/gi, '').trim().replace(/[\s\-:,]+$/, '').trim();
+      const r = newRoom(1, t); r.c = /cornice|\bcorn\b|\+\s*c\b/.test(lo); if (/paint/.test(lo)) r.pm = /paint\s*(only)?\s*(walls?\s*(and|&|\+)\s*ceiling|ceiling\s*(and|&|\+)\s*walls?|all|whole|room|everything)/.test(lo) ? 'CW' : /paint\s*walls?/.test(lo) ? 'W' : 'C'; r.ins = /insul|\bins\b/.test(lo);
       if (t === 'PB' && /\b(wood|wooden|noggings?|noggins?)\b/.test(lo)) r.fr = 'wood'; else if (t === 'PB' && /\bmetal\b/.test(lo)) r.fr = 'metal';
       if (t === 'PT') {
         if (pairs.length) { r.l = pairs[0][0]; r.h = pairs[0][1]; } else { const one = lo.match(new RegExp(num)); if (one) r.l = +one[1]; }
@@ -535,7 +600,7 @@
   ACT.ePaste = () => { readEst(); sheet('<h2>Paste sizes</h2><p class="small muted" style="margin-top:0">One room or wall per line. Write it the way you write in your notebook. Examples:</p>' +
     '<div class="card small" style="line-height:1.7;margin:4px 0">Living room 5 x 4 cornice<br>Store 3 x 3 wood <span class="muted">(on wood noggings)</span><br>Kitchen 3x3 acoustic<br>Hall 6x5 L 2x2 <span class="muted">(L-shape, cut corner 2x2)</span><br>Bedroom 16m2 POP cornice<br>Wall 4 x 3 partition 1 door insulation</div>' +
     '<textarea id="epaste" rows="8" style="width:100%;border:1.5px solid var(--line);border-radius:12px;padding:10px;font:inherit" placeholder="Paste or type here"></textarea>' +
-    '<p class="small muted">No type word = plasterboard. Words that work: acoustic, POP, partition, cornice, wood (noggings), metal, L, door, insulation, m2.</p>' +
+    '<p class="small muted">No type word = plasterboard. Words that work: acoustic, POP, partition, cornice, paint, wood (noggings), metal, L, door, insulation, m2.</p>' +
     '<div class="row"><button class="btn grow" data-act="ePasteBack">Back</button><button class="btn primary grow" data-act="ePasteGo">Add these</button></div>'); };
   ACT.ePasteBack = () => estSheet();
   ACT.ePasteGo = () => {
@@ -559,8 +624,10 @@
     });
     e.items.sort((a, b) => (a.l ? 1 : 0) - (b.l ? 1 : 0));
     if (D.est.trans !== '') e.trans = D.est.trans;
-    e.rooms = D.est.rooms.map(r => { const o = { n: r.n, t: r.t || 'PB', s: r.s || 'R', c: !!r.c }; if ((r.t || 'PB') === 'PB' && frameOf(r, D.est.frame) === 'wood') o.fr = 'wood'; ['l', 'w', 'cl', 'cw', 'a', 'h', 'd'].forEach(k => { if (+r[k]) o[k] = +r[k]; }); if (r.ins) o.ins = true; o.m2 = r2(r.t === 'PT' ? wallOf(r, D.rules) : areaOf(r)); o.size = sizeText(r, D.rules); return o; });
-    if (!e.title) { const rc = e.rooms.filter(r => r.t !== 'PT').length; const sa = cfg().showRooms === 'Yes'; e.title = rc ? rc + ' room' + (rc > 1 ? 's' : '') + ' ceiling' + (sa ? ' · ' + res.area + ' m²' : '') : 'Partition walls' + (sa ? ' · ' + res.areaPt + ' m²' : ''); }
+    e.rooms = D.est.rooms.map(r => { const o = { n: r.n, t: r.t || 'PB', s: r.s || 'R', c: !!r.c }; { const m = pmOf(r); if (m && r.t !== 'PT') { o.pm = m; ['wh', 'dr', 'wn'].forEach(k => { if (+r[k]) o[k] = +r[k]; }); } } if ((r.t || 'PB') === 'PB' && frameOf(r, D.est.frame) === 'wood') o.fr = 'wood'; ['l', 'w', 'cl', 'cw', 'a', 'h', 'd'].forEach(k => { if (+r[k]) o[k] = +r[k]; }); if (r.ins) o.ins = true; o.m2 = r2(r.t === 'PT' ? wallOf(r, D.rules) : areaOf(r)); o.size = sizeText(r, D.rules); return o; });
+    if (!e.title && e.rooms.length && e.rooms.every(r => r.t === 'PNT')) e.title = 'Painting · ' + e.rooms.length + ' room' + (e.rooms.length > 1 ? 's' : '');
+    if (!e.title) { const rc = e.rooms.filter(r => r.t !== 'PT' && r.t !== 'PNT').length; const sa = cfg().showRooms === 'Yes'; e.title = rc ? rc + ' room' + (rc > 1 ? 's' : '') + ' ceiling' + (sa ? ' · ' + res.area + ' m²' : '') : 'Partition walls' + (sa ? ' · ' + res.areaPt + ' m²' : ''); }
+    if (res.areaPaint > 0) { const pl = scopeList().find(s => /paint/i.test(s)); if (pl) { const sc = e.scope || { inc: e.no ? [] : scopeList().slice(0, 2), exc: [] }; if (!sc.inc.some(x => kk(x) === kk(pl))) sc.inc.push(pl); sc.exc = scopeList().filter(s => !sc.inc.some(x => kk(x) === kk(s))); e.scope = sc; } }
     D.est = null; editSheet(); toast('Materials added. Check the prices, then Preview.');
   };
 
@@ -580,6 +647,7 @@
     const c = cfg();
     sheet('<h2>Document settings</h2>' +
       '<label>Use documents (estimates, invoices, waybills)?</label><select id="sdocs"><option value="Yes"' + (c.docs !== 'No' ? ' selected' : '') + '>Yes</option><option value="No"' + (c.docs === 'No' ? ' selected' : '') + '>No, hide them</option></select>' +
+      (build() ? '<label>Work you do (for "What this price covers" on estimates)</label><input id="ssc" value="' + esc(scopeList().join(', ')) + '" placeholder="Ceiling, Skimming, Painting, Electricals, POP"><p class="small muted" style="margin:2px 0 0">Separate with commas. The first two are ticked on every new estimate.</p>' : '') +
       '<label>Show measured areas (room sizes) to the client?</label><select id="ssr"><option value="No"' + (c.showRooms !== 'Yes' ? ' selected' : '') + '>No, keep them for me only</option><option value="Yes"' + (c.showRooms === 'Yes' ? ' selected' : '') + '>Yes, print them</option></select>' +
       '<div class="picker"><div><label>Estimate valid (days)</label><input id="sed" type="number" value="' + esc(c.estDays || 14) + '"></div><div><label>Invoice due (days)</label><input id="sid" type="number" value="' + esc(c.invDays || 7) + '"></div></div>' +
       '<label>Estimate and pro forma terms</label><textarea id="set" rows="4" style="width:100%;border:1.5px solid var(--line);border-radius:12px;padding:10px;font:inherit">' + esc(c.estTerms || '') + '</textarea>' +
@@ -590,7 +658,7 @@
       '<br><button class="btn primary block" data-act="dSettingsSave">Save</button>');
   };
   ACT.dSettingsSave = async (d, btn) => {
-    const values = { useTax: $('#sut').value, showRooms: $('#ssr').value, docs: $('#sdocs').value, estDays: $('#sed').value, invDays: $('#sid').value, estTerms: $('#set').value, invTerms: $('#sit').value, taxVat: $('#stv').value, taxNhil: $('#stn').value, taxGet: $('#stg').value, tin: $('#sti').value };
+    const values = { scopeList: $('#ssc') ? $('#ssc').value : undefined, useTax: $('#sut').value, showRooms: $('#ssr').value, docs: $('#sdocs').value, estDays: $('#sed').value, invDays: $('#sid').value, estTerms: $('#set').value, invTerms: $('#sit').value, taxVat: $('#stv').value, taxNhil: $('#stn').value, taxGet: $('#stg').value, tin: $('#sti').value };
     btn.disabled = true;
     try { const r = await api('admin', { op: 'saveSettings', values }); if (!r.ok) { toast(errText(r.error)); btn.disabled = false; return; } if (S.cache && r.cfg) S.cache.cfg = r.cfg; toast('Saved'); closeSheet(); render(); } catch (e) { toast('Needs internet'); btn.disabled = false; }
   };
