@@ -339,7 +339,7 @@ function syncSoon() { clearTimeout(syncTimer); syncTimer = setTimeout(() => sync
 
 async function syncNow(manual) {
   if (S.syncing || !S.session) return;
-  S.syncing = true; paintStatus();
+  S.syncing = true; S.syncShow = !!manual || S.queue.length > 0; paintStatus();
   try {
     let guard = 0, boot = null;
     while (S.queue.length && guard++ < 20) {
@@ -395,8 +395,8 @@ async function boot() {
   if (S.session) { syncNow(); }
   window.addEventListener('online', () => { S.online = true; paintStatus(); syncNow(); });
   window.addEventListener('offline', () => { S.online = false; paintStatus(); });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && (S.queue.length || Date.now() - (S.lastSync || 0) > 30000)) syncNow(); });
-  setInterval(() => { if (!navigator.onLine || !S.session) return; const age = Date.now() - (S.lastSync || 0), live = S.session.role === 'admin' && (S.tab === 'dash' || S.tab === 'cash'); if (S.queue.length || (live && age > 60000) || age > 300000) syncNow(); }, 20000);  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); S.installEvt = e; render(true); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && (S.queue.length || Date.now() - (S.lastSync || 0) > 120000)) syncNow(); });
+  setInterval(() => { if (!navigator.onLine || !S.session) return; const age = Date.now() - (S.lastSync || 0), live = S.session.role === 'admin' && (S.tab === 'dash' || S.tab === 'cash'); if (S.queue.length || (live && age > 180000) || age > 600000) syncNow(); }, 20000);  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); S.installEvt = e; render(true); });
 }
 function fatal(msg) { $('#app').innerHTML = '<div class="login"><h2>' + esc(bizName()) + '</h2><p>' + esc(msg) + '</p></div>'; }
 
@@ -477,8 +477,9 @@ function render(keepScroll) {
 function paintStatus() {
   const b = $('#syncbtn'); if (!b) return;
   const n = S.queue.length;
-  b.className = 'sync' + (S.syncing ? '' : (!navigator.onLine ? ' off' : (n ? ' pend' : '')));
-  b.textContent = S.syncing ? 'Syncing…' : !navigator.onLine ? (n ? 'Offline · ' + n + ' to send' : 'Offline') : n ? n + ' to send' : '✓ Synced';
+  b.className = 'sync' + ((S.syncing && (S.syncShow || n)) || (window.KL && KL.bgSaves > 0) ? '' : (!navigator.onLine ? ' off' : (n ? ' pend' : '')));
+  const bg = window.KL && KL.bgSaves > 0, busy = (S.syncing && (S.syncShow || n)) || bg;
+  b.textContent = busy ? (bg && !S.syncing ? 'Saving…' : 'Syncing…') : !navigator.onLine ? (n ? 'Offline · ' + n + ' to send' : 'Offline') : n ? n + ' to send' : '✓ Synced';
 }
 function banners() {
   let h = '';
@@ -518,6 +519,7 @@ async function doLogin() {
   } finally { const b2 = $('#lbtn'); if (b2) { b2.disabled = false; b2.textContent = 'Sign in'; } }
 }
 async function logout() {
+  try { Object.keys(localStorage).filter(k => k.indexOf('es_keep_') === 0).forEach(k => localStorage.removeItem(k)); } catch (e) { /* ignore */ }
   if (S.queue.length && !confirm(S.queue.length + ' sale(s) are not sent yet. Signing out will keep them on this phone, but only this phone can send them. Sign out?')) return;
   S.session = null; await kvDel('session'); S.rep = null; await kvDel('report'); S.keyBad = false; render();
 }
@@ -1049,6 +1051,7 @@ document.addEventListener('change', async e => {
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && $('#lkey') && document.activeElement && document.activeElement.id === 'lkey') doLogin(); });
 
 window.KL = {
+  paintSave: () => paintStatus(),
   S, ACT, ERR, ICON, LS, api, uid, word, bizName, cfg, logoSrc, receiptImage, kvGet, kvSet, shrinkImage, loadPhotos, esc, money, r2, sum, kk, $, today, nowTime, toast, sheet, closeSheet, putOne, delOne, derived, fetchReport, refreshCache, syncSoon, errText, WALKIN,
   fn: n => ({ render, tabsFor, historyHTML, receiptSheet, cashHTML }[n]),
   setFn: (n, f) => { if (n === 'render') render = f; else if (n === 'tabsFor') tabsFor = f; else if (n === 'historyHTML') historyHTML = f; else if (n === 'receiptSheet') receiptSheet = f; else if (n === 'cashHTML') cashHTML = f; }

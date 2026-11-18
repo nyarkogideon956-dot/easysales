@@ -47,13 +47,19 @@
   /* ---------- type the access key every time the app is opened ---------- */
   (function keyGate() {
     let hiddenAt = 0;
+    const KEEP = 'es_keep_' + (location.pathname.split('/').filter(Boolean)[0] || 'app');
+    const kept = () => { try { return !!(S.session && S.session.key && localStorage.getItem(KEEP) === String(S.session.key)); } catch (e) { return false; } };
+    const keep = on => { try { if (on) localStorage.setItem(KEEP, String(S.session.key)); else localStorage.removeItem(KEEP); } catch (e) { /* private window */ } };
+    KL.keepSignedIn = { on: kept, set: keep };
     function show() {
-      if (!(S.session && S.session.key) || document.getElementById('esgate')) return;
+      if (!(S.session && S.session.key) || document.getElementById('esgate') || kept()) return;
       const d = document.createElement('div'); d.id = 'esgate';
       d.style.cssText = 'position:fixed;inset:0;z-index:210;background:#F3F5F9;display:flex;align-items:center;justify-content:center;padding:24px';
       d.innerHTML = '<form id="esgf" style="width:100%;max-width:360px;text-align:center" autocomplete="off"><div style="font-size:46px">🔒</div><h2 style="margin:6px 0">' + esc(bizName()) + '</h2>' +
         '<p class="muted small" style="margin-top:0">Type your access key to open the app.</p>' +
         '<input id="esgk" type="password" autocomplete="off" placeholder="Access key" style="width:100%;text-align:center;font-size:18px;padding:12px;border:1.5px solid var(--line);border-radius:12px">' +
+        '<label style="display:flex;gap:8px;align-items:center;justify-content:center;margin-top:10px;font-weight:600;color:var(--ink)"><input id="esgkeep" type="checkbox" style="width:20px;height:20px;min-height:0"> Keep me signed in on this phone</label>' +
+        '<p class="small muted" style="margin:2px 0 0">Only on your own phone or laptop.</p>' +
         '<p id="esge" class="red small" style="min-height:18px"></p><button class="btn primary block" type="submit">Open</button>' +
         '<p class="small muted" style="margin-top:18px">Forgot your key? Ask the shop owner.</p></form>';
       document.body.appendChild(d);
@@ -61,7 +67,8 @@
       d.querySelector('#esgf').addEventListener('submit', async ev => {
         ev.preventDefault();
         const typed = inp.value.trim(), er = d.querySelector('#esge');
-        if (typed === String(S.session.key).trim()) { d.remove(); return; }
+        const wantKeep = d.querySelector('#esgkeep').checked;
+        if (typed === String(S.session.key).trim()) { keep(wantKeep); d.remove(); return; }
         // not the key this phone signed in with: if it is a real key (for example a changed key), switch to it
         if (typed.length >= 4 && navigator.onLine) {
           er.textContent = 'Checking…';
@@ -71,7 +78,7 @@
             const r = await KL.api('login');
             if (r.ok) {
               S.session = Object.assign({ key: typed }, r.user);
-              await KL.kvSet('session', S.session);
+              await KL.kvSet('session', S.session); keep(wantKeep);
               S.tab = S.session.role === 'admin' ? 'dash' : 'sell';
               d.remove(); KL.fn('render')(); KL.toast('Signed in as ' + (S.session.name || ''));
               try { const bb = await KL.api('bootstrap'); if (bb.ok) { S.cache = bb; KL.kvSet('cache', bb).catch(() => {}); KL.fn('render')(true); } } catch (x) { /* later */ }
@@ -206,27 +213,119 @@
     } catch (e) { toast('Needs internet'); btn.disabled = false; }
   };
   ACT.jOpen = d => jobSheet(d.no);
-  function jobSheet(no) {
-    const j = (B.jobs || []).find(x => x.no === no); if (!j) return;
-    B.job = j;
-    const L = (a, b, c) => '<div class="row between" style="padding:4px 0"><span>' + a + '</span><b' + (c ? ' class="' + c + '"' : '') + '>' + b + '</b></div>';
-    sheet('<h2>' + esc(j.no) + ' · ' + esc(j.customer) + '</h2><p class="small muted" style="margin-top:0">' + esc([j.title, j.site, j.phone].filter(Boolean).join(' · ')) + (j.started ? '<br>Started ' + esc(j.started) : '') + (j.finished ? ' · finished ' + esc(j.finished) : '') + '</p>' +
-      '<div class="chips">' + B.stages.map(s => '<button class="chip ' + (s === j.stage ? 'on' : '') + '" data-act="jStage" data-s="' + esc(s) + '">' + esc(s) + '</button>').join('') + '</div>' +
-      '<div class="card">' + L('Agreed price', money(j.value)) + chgHTML(j, '') + L('Received from client', money(j.received), 'green') + L('Still to collect', money(Math.max(0, j.value - j.received)), j.value - j.received > 0.004 ? 'red' : '') + '<hr style="border:0;border-top:1px solid var(--line)">' +
-      Object.keys(j.costs).map(c => L(esc(c), money(j.costs[c]))).join('') + L('Total costs', money(j.costTotal)) + '<div class="row between" style="padding:6px 0 0;font-size:17px"><b>Profit if fully paid</b><b class="' + (j.value - j.costTotal >= 0 ? 'green' : 'red') + '">' + money(j.value - j.costTotal) + '</b></div>' +
-        '<div class="row between" style="padding:2px 0 0"><span>Cash profit so far <span class="small muted">(received − spent)</span></span><b class="' + ((j.cashProfit || 0) >= 0 ? 'green' : 'red') + '">' + money(j.cashProfit || 0) + '</b></div></div>' +
-      '<div class="row" style="gap:8px;margin-top:8px"><button class="btn primary grow" style="background:#16A34A;border-color:#16A34A" data-act="jPay" data-no="' + esc(j.no) + '">Client paid</button><button class="btn grow" data-act="pcNew" data-no="' + esc(j.no) + '" data-who="">Change price</button></div>' +
-      (KL.growJobBtns ? KL.growJobBtns(j) : '') +
-      ((j.pays || []).length ? '<div class="card" style="padding:4px 14px;margin-top:8px">' + j.pays.slice().reverse().map(x => '<div class="item"><span class="grow"><span class="nm">' + money(x.cash + x.momo) + '</span><br><span class="small muted">' + esc(x.date) + ' · ' + (x.cash && x.momo ? 'cash ' + money(x.cash) + ' + MoMo ' + money(x.momo) : x.momo ? 'MoMo' : 'cash') + (x.ref !== j.no ? ' · on ' + esc(x.ref) : '') + '</span></span></div>').join('') + '</div>' : '') +
-      '<h3 style="margin-top:14px">Team on this job</h3>' + teamHTML(j) +
-      '<div class="row" style="gap:8px;margin-top:6px"><button class="btn primary grow" data-act="pNew" data-job="' + esc(j.no) + '">Pay worker / sub</button><button class="btn grow" data-act="subNew" data-job="' + esc(j.no) + '">+ Subcontract price</button></div>' +
-      '<div class="row" style="gap:8px;margin-top:8px"><button class="btn grow" data-act="xNew" data-job="' + esc(j.no) + '">+ Other cost</button>' + (KL.hasMod('stock') ? '<button class="btn grow" data-act="jStk" data-no="' + esc(j.no) + '">+ From my stock</button>' : '') + '</div>' +
-      (j.list.length ? '<div class="card" style="padding:4px 14px">' + j.list.map(x => '<div class="item"><span class="grow"><span class="nm">' + esc(x.cat) + '</span><br><span class="small muted">' + esc(x.date) + (x.to ? ' · ' + esc(x.to) : '') + (x.note ? ' · ' + esc(x.note) : '') + '</span></span><span class="amt">' + money(x.amount) + '</span></div>').join('') + '</div>' : '') +
-      '<h3 style="margin-top:14px">Site notes</h3>' + ((j.data.notes || []).slice().reverse().map(n => '<div class="small" style="padding:4px 0;border-bottom:1px solid var(--line)"><b>' + esc(n.d) + '</b> ' + esc(n.t) + '</div>').join('') || '<p class="small muted">No notes yet.</p>') +
-      '<div class="row" style="margin-top:6px"><input id="jnote" class="grow" placeholder="Example: boards delivered, structure done"><button class="btn sm" data-act="jNote">Add</button></div>' +
-      (j.from ? '<button class="btn ghost block" style="margin-top:10px" data-act="jDoc" data-no="' + esc(j.from) + '">Open ' + esc(j.from) + '</button>' : '') +
-      j.invoices.filter(x => x !== j.from).map(x => '<button class="btn ghost block" style="margin-top:6px" data-act="jDoc" data-no="' + esc(x) + '">Open ' + esc(x) + '</button>').join(''));
+  /* ---------- fast saves: the change shows at once, Google is updated in the background ---------- */
+  const TEAMCAT = ['Wages', 'Subcontractor', 'Apprentice allowance'];
+  let refreshT = null;
+  const sheetJob = () => { const h = document.querySelector('[data-jobno]'); return h ? h.dataset.jobno : ''; };
+  function quietRefresh() {
+    clearTimeout(refreshT);
+    refreshT = setTimeout(async () => {
+      try { const r = await api('biz', { op: 'jobs' }); if (!r.ok) return; B.jobs = r.jobs; B.cats = r.cats || B.cats; B.stages = r.stages || B.stages; B.crewNames = r.crew || B.crewNames; } catch (e) { return; }
+      const open = sheetJob(); if (open) jobSheet(open, true); else if (S.tab === 'jobs' || S.tab === 'dash') render(true);
+    }, 1500);
   }
+  KL.bgSaves = 0;
+  function bgSend(body, label, retry) {
+    KL.bgSaves++; if (KL.paintSave) KL.paintSave();
+    const go = n => api('biz', body).then(r => { if (!r.ok) toast(label + ' was NOT saved: ' + errText(r.error)); return r; })
+      .catch(e => { if (retry && n < 3) return new Promise(res => setTimeout(res, 3000 * (n + 1))).then(() => go(n + 1)); toast(label + ' was NOT saved (no internet). Please enter it again.'); });
+    return go(0).finally(() => { KL.bgSaves--; if (KL.paintSave) KL.paintSave(); quietRefresh(); });
+  }
+  const fast = () => navigator.onLine;
+  const J = no => (B.jobs || []).find(x => x.no === no);
+  function addCostLocal(j, x, type) {
+    j.list = [x].concat(j.list || []); j.costs = j.costs || {}; j.costs[x.cat] = r2((j.costs[x.cat] || 0) + x.amount);
+    j.costTotal = r2(j.costTotal + x.amount); j.profit = r2(j.value - j.costTotal); j.cashProfit = r2((j.cashProfit || 0) - x.amount);
+    if (x.to && (TEAMCAT.includes(x.cat) || type)) {
+      let p = (j.people || []).find(q => kk(q.name) === kk(x.to));
+      if (!p) { p = { name: x.to, type: type || 'Worker', phone: '', days: 0, paid: 0, count: 0, agreed: null, changes: [] }; j.people = (j.people || []).concat([p]); }
+      p.paid = r2(p.paid + x.amount); p.count++; p.days = r2((p.days || 0) + (x.days || 0)); if (p.agreed !== null) p.balance = r2(p.agreed - p.paid);
+      return p;
+    }
+    return null;
+  }
+
+  /* ---------- the job: 4 small tabs ---------- */
+  const isTeam = (j, x) => x.to && TEAMCAT.includes(x.cat) || (j.people || []).some(p => x.to && kk(p.name) === kk(x.to));
+  function jobSheet(no, keep) {
+    const j = J(no); if (!j) return;
+    if (!B.job || B.job.no !== no) B.jtab = 'sum';
+    B.job = j; const t = B.jtab || 'sum';
+    const L = (a, b, c, st) => '<div class="row between" style="padding:5px 0' + (st ? ';' + st : '') + '"><span>' + a + '</span><b' + (c ? ' class="' + c + '"' : '') + '>' + b + '</b></div>';
+    const left = r2(Math.max(0, j.value - j.received)), P = j.people || [], owed = sum(P, p => p.balance > 0.004 ? p.balance : 0);
+    const tabs = [['sum', 'Summary'], ['client', 'Client'], ['team', 'Team' + (P.length ? ' ' + P.length : '')], ['costs', 'Costs']];
+    let h = '<div data-jobno="' + esc(j.no) + '"></div><h2 style="margin-bottom:2px">' + esc(j.no) + ' · ' + esc(j.customer) + '</h2><p class="small muted" style="margin-top:0">' + esc([j.title, j.site, j.phone].filter(Boolean).join(' · ')) + (j.started ? '<br>Started ' + esc(j.started) : '') + (j.finished ? ' · finished ' + esc(j.finished) : '') + '</p>' +
+      '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:#EEF2F6;padding:4px;border-radius:12px;margin-bottom:10px">' + tabs.map(x => '<button data-act="jTab" data-t="' + x[0] + '" style="border:0;border-radius:9px;padding:9px 2px;font:inherit;font-size:13.5px;font-weight:700;' + (t === x[0] ? 'background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)' : 'background:transparent;color:var(--mute)') + '">' + x[1] + '</button>').join('') + '</div>';
+    if (t === 'sum') {
+      h += '<div class="chips">' + B.stages.map(s => '<button class="chip ' + (s === j.stage ? 'on' : '') + '" data-act="jStage" data-s="' + esc(s) + '">' + esc(s) + '</button>').join('') + '</div>' +
+        '<div class="card">' + L('Agreed price', money(j.value)) + L('Received from client', money(j.received), 'green') + L('Still to collect', money(left), left > 0.004 ? 'red' : '') + L('Total costs', money(j.costTotal)) + (owed ? L('Still owed to subcontractors', money(owed), 'red') : '') +
+        '<div class="row between" style="padding:8px 0 0;margin-top:4px;border-top:1px solid var(--line);font-size:17px"><b>Profit if fully paid</b><b class="' + (j.value - j.costTotal >= 0 ? 'green' : 'red') + '">' + money(j.value - j.costTotal) + '</b></div>' +
+        '<div class="row between small" style="padding-top:2px"><span class="muted">Cash profit so far (received − spent)</span><b class="' + ((j.cashProfit || 0) >= 0 ? 'green' : 'red') + '">' + money(j.cashProfit || 0) + '</b></div></div>' +
+        '<button class="btn primary block" data-act="jAdd" data-no="' + esc(j.no) + '">＋ Add (payment, worker, cost…)</button>' +
+        '<h3 style="margin-top:14px">Site notes</h3>' + ((j.data.notes || []).slice().reverse().slice(0, 4).map(n => '<div class="small" style="padding:4px 0;border-bottom:1px solid var(--line)"><b>' + esc(n.d) + '</b> ' + esc(n.t) + '</div>').join('') || '<p class="small muted">No notes yet.</p>') +
+        '<div class="row" style="margin-top:6px"><input id="jnote" class="grow" placeholder="Example: boards delivered, structure done"><button class="btn sm" data-act="jNote">Add</button></div>' +
+        (j.from ? '<button class="btn ghost block" style="margin-top:10px" data-act="jDoc" data-no="' + esc(j.from) + '">Open ' + esc(j.from) + '</button>' : '') +
+        j.invoices.filter(x => x !== j.from).map(x => '<button class="btn ghost block" style="margin-top:6px" data-act="jDoc" data-no="' + esc(x) + '">Open ' + esc(x) + '</button>').join('');
+    } else if (t === 'client') {
+      h += '<div class="card">' + L('Agreed price', money(j.value)) + chgHTML(j, '') + L('Received', money(j.received), 'green') + L('Still to collect', money(left), left > 0.004 ? 'red' : '') + '</div>' +
+        '<div class="row" style="gap:8px"><button class="btn primary grow" style="background:#16A34A;border-color:#16A34A" data-act="jPay" data-no="' + esc(j.no) + '">Client paid</button><button class="btn grow" data-act="pcNew" data-no="' + esc(j.no) + '" data-who="">Change price</button></div>' +
+        (KL.growJobBtns ? KL.growJobBtns(j) : '') +
+        '<h3 style="margin-top:14px">Payments from the client</h3>' + ((j.pays || []).length ? '<div class="card" style="padding:2px 14px">' + j.pays.slice().reverse().map(x => '<div class="item"><span class="grow"><span class="small muted">' + esc(x.date || 'before') + ' · ' + (x.cash && x.momo ? 'cash + MoMo' : x.momo ? 'MoMo' : 'cash') + (x.ref !== j.no ? ' · ' + esc(x.ref) : '') + '</span></span><b class="green">' + money(x.cash + x.momo) + '</b></div>').join('') + '</div>' : '<p class="small muted">Nothing paid yet.</p>');
+    } else if (t === 'team') {
+      h += '<div class="row" style="gap:8px"><button class="btn primary grow" data-act="pNew" data-job="' + esc(j.no) + '">Pay worker / sub</button><button class="btn grow" data-act="subNew" data-job="' + esc(j.no) + '">Agreed price</button></div>' +
+        (P.length ? '<div class="card" style="padding:2px 14px;margin-top:10px">' + P.map(p => '<button class="item" data-act="jPerson" data-n="' + esc(p.name) + '"><span class="grow"><span class="nm">' + esc(p.name) + '</span> ' + typeBadge(p.type) + '<br><span class="small ' + (p.agreed !== null && p.balance > 0.004 ? 'red' : 'muted') + '">' +
+          (p.agreed !== null ? (p.balance > 0.004 ? 'still to pay ' + money(p.balance) + ' of ' + money(p.agreed) : 'fully paid · ' + money(p.agreed)) : (p.days ? p.days + ' day' + (p.days === 1 ? '' : 's') + ' · ' : '') + p.count + ' payment' + (p.count === 1 ? '' : 's')) + '</span></span><b>' + money(p.paid) + '</b></button>').join('') +
+          '<div class="row between" style="padding:8px 0"><b>Team total</b><b>' + money(sum(P, p => p.paid)) + '</b></div></div><p class="small muted">Tap a name to see each payment, pay again or change the price.</p>' : '<p class="small muted" style="margin-top:10px">Nobody yet.</p>');
+    } else {
+      const own = (j.list || []).filter(x => !isTeam(j, x)), teamSum = sum((j.list || []).filter(x => isTeam(j, x)), x => x.amount), G = {};
+      own.forEach(x => { (G[x.cat] = G[x.cat] || []).push(x); });
+      h += '<div class="row" style="gap:8px"><button class="btn primary grow" data-act="xNew" data-job="' + esc(j.no) + '">+ Other cost</button>' + (KL.hasMod('stock') ? '<button class="btn grow" data-act="jStk" data-no="' + esc(j.no) + '">+ From my stock</button>' : '') + '</div>' +
+        '<div class="card" style="padding:2px 14px;margin-top:10px">' +
+        (teamSum ? '<button class="item" data-act="jTab" data-t="team"><span class="grow"><span class="nm">Workers &amp; subcontractors</span><br><span class="small muted">see the Team tab</span></span><b>' + money(teamSum) + '</b></button>' : '') +
+        Object.keys(G).sort((a, b) => sum(G[b], x => x.amount) - sum(G[a], x => x.amount)).map(c => '<details style="border-bottom:1px solid var(--line)"><summary class="row between" style="padding:11px 0;cursor:pointer;list-style:none"><span><span class="nm">' + esc(c) + '</span> <span class="small muted">· ' + G[c].length + '</span></span><b>' + money(sum(G[c], x => x.amount)) + ' ▾</b></summary>' +
+          G[c].map(x => '<div class="row between small" style="padding:5px 0 5px 10px"><span class="muted">' + esc(x.date) + (x.to ? ' · ' + esc(x.to) : '') + (x.note ? ' · ' + esc(x.note) : '') + '</span><span>' + money(x.amount) + '</span></div>').join('') + '</details>').join('') +
+        (!teamSum && !own.length ? '<div class="empty">No costs yet.</div>' : '') +
+        '<div class="row between" style="padding:10px 0"><b>Total costs</b><b>' + money(j.costTotal) + '</b></div></div>';
+    }
+    sheet(h);
+  }
+  ACT.jAgree = d => {
+    const j = B.job, p = j && (j.people || []).find(q => q.name === d.n); if (!p || p.agreed === null) return;
+    const x = { to: p.name, job: j.no, amount: p.agreed, date: today(), note: (j.subNotes && j.subNotes[p.name]) || '' };
+    B.voucher = { x, p, j, agree: true };
+    sheet('<h2>Agreed price · ' + esc(p.name) + '</h2><p class="small muted" style="margin-top:0">Send this to ' + esc(p.name) + ' so you both have the amount in writing before the work starts.</p>' +
+      '<div class="card"><div class="row between"><span>Job</span><b>' + esc(j.no) + ' · ' + esc(j.customer) + '</b></div><div class="row between" style="margin-top:4px"><span>Agreed price</span><b style="font-size:20px">' + money(p.agreed) + '</b></div>' + (p.paid ? '<div class="row between small" style="margin-top:4px"><span>Already paid</span><b>' + money(p.paid) + '</b></div>' : '') + '</div>' +
+      '<button class="btn primary block" style="background:#16A34A;border-color:#16A34A" data-act="vPic">Send agreed price picture (WhatsApp)</button>' +
+      '<button class="btn ghost block" style="margin-top:8px" data-act="jPerson" data-n="' + esc(p.name) + '">Back</button>');
+  };
+  ACT.jSlip = d => {
+    const j = B.job, p = j && (j.people || []).find(q => q.name === d.n), x = j && (j.list || []).find(e => e.id === d.id); if (!x || !p) return;
+    const m = String(x.note || '').match(/by (Cash|MoMo|Bank)/i), note = String(x.note || '').replace(/\s*·?\s*by (Cash|MoMo|Bank)\s*/i, '').trim();
+    voucherSheet(Object.assign({}, x, { job: j.no, type: p.type, phone: p.phone, method: m ? m[1] : '', note }), p, j);
+  };
+  ACT.jTab = d => { B.jtab = d.t; if (B.job) jobSheet(B.job.no, true); };
+  ACT.jAdd = d => {
+    const j = J(d.no); if (!j) return;
+    const it = (act, icon, title, sub, extra) => '<button class="item" data-act="' + act + '" ' + extra + '><span style="font-size:22px;width:34px">' + icon + '</span><span class="grow"><span class="nm">' + title + '</span><br><span class="small muted">' + sub + '</span></span><span class="muted">›</span></button>';
+    const no = 'data-no="' + esc(j.no) + '" data-job="' + esc(j.no) + '"';
+    sheet('<h2>Add to ' + esc(j.no) + '</h2><div class="card" style="padding:2px 14px">' +
+      it('jPay', '💵', 'Client paid', 'Money from ' + esc(j.customer), no) + it('pNew', '👷', 'Pay worker / subcontractor', 'Wages, subcontract part-payment', no) +
+      it('xNew', '🧾', 'Other cost', 'Transport, materials, food…', no) + (KL.hasMod('stock') ? it('jStk', '📦', 'From my stock', 'Materials you already had', no) : '') +
+      it('subNew', '🤝', 'Agreed price with a subcontractor', 'What you will pay them for this job', no) + it('pcNew', '✏️', 'Change the client\'s price', 'Additional works or a reduction', no + ' data-who=""') + '</div>' +
+      '<button class="btn ghost block" style="margin-top:8px" data-act="jOpen" data-no="' + esc(j.no) + '">Back to the job</button>');
+  };
+  ACT.jPerson = d => {
+    const j = B.job, p = j && (j.people || []).find(x => x.name === d.n); if (!p) return;
+    const pays = (j.list || []).filter(x => x.to && kk(x.to) === kk(p.name));
+    sheet('<h2>' + esc(p.name) + ' ' + typeBadge(p.type) + '</h2><p class="small muted" style="margin-top:0">' + esc(j.no) + ' · ' + esc(j.customer) + '</p>' +
+      '<div class="card">' + (p.agreed !== null ? '<div class="row between" style="padding:4px 0"><span>Agreed price</span><b>' + money(p.agreed) + '</b></div>' + chgHTML(j, p.name) : '') +
+      '<div class="row between" style="padding:4px 0"><span>Paid</span><b>' + money(p.paid) + '</b></div>' + (p.days ? '<div class="row between" style="padding:4px 0"><span>Days</span><b>' + p.days + '</b></div>' : '') +
+      (p.agreed !== null ? '<div class="row between" style="padding:4px 0"><span>Still to pay</span><b class="' + (p.balance > 0.004 ? 'red' : 'green') + '">' + (p.balance > 0.004 ? money(p.balance) : 'fully paid') + '</b></div>' : '') + '</div>' +
+      '<div class="row" style="gap:8px"><button class="btn primary grow" data-act="pNew" data-job="' + esc(j.no) + '" data-name="' + esc(p.name) + '">Pay</button>' + (p.type === 'Subcontractor' ? (p.agreed !== null ? '<button class="btn grow" data-act="pcNew" data-no="' + esc(j.no) + '" data-who="' + esc(p.name) + '">Change price</button>' : '<button class="btn grow" data-act="subNew" data-job="' + esc(j.no) + '" data-name="' + esc(p.name) + '">Agreed price</button>') : '') + '</div>' +
+      (p.agreed !== null ? '<button class="btn block" style="margin-top:8px" data-act="jAgree" data-n="' + esc(p.name) + '">📄 Send the agreed price to ' + esc(p.name) + '</button>' : '') +
+      '<h3 style="margin-top:14px">Payments</h3><div class="card" style="padding:2px 14px">' + (pays.length ? pays.map(x => (p.type === 'Apprentice' ? '<div class="item">' : '<button class="item" data-act="jSlip" data-id="' + esc(x.id) + '" data-n="' + esc(p.name) + '">') + '<span class="grow"><span class="small muted">' + esc(x.date) + (x.days ? ' · ' + x.days + ' days' : '') + (x.note ? ' · ' + esc(x.note) : '') + '</span></span><b>' + money(x.amount) + '</b>' + (p.type === 'Apprentice' ? '</div>' : ' <span class="muted">🧾</span></button>')).join('') + (p.type === 'Apprentice' ? '' : '<p class="small muted" style="margin:6px 0">Tap a payment to send its slip.</p>') : '<div class="empty">None yet.</div>') + '</div>' +
+      '<button class="btn ghost block" style="margin-top:8px" data-act="jTab" data-t="team">Back to the team</button>');
+  };
 
   /* ---------- client pays on a job ---------- */
   ACT.jPay = d => {
@@ -242,11 +341,19 @@
     if (cash + momo <= 0) { toast('Enter the amount'); return; }
     const j = (B.jobs || []).find(x => x.no === d.no);
     if (!confirm('Record ' + money(cash + momo) + ' from ' + (j ? j.customer : 'the client') + '?')) return;
+    if (j && j.value && cash + momo > r2(j.value - j.received) + 0.004) { toast('That is more than the client still owes on this job'); return; }
     btn.disabled = true;
     try {
-      const r = await api('biz', { op: 'jobPay', no: d.no, cash, momo });
-      if (!r.ok) { toast(r.error === 'more_than_owed' ? 'That is more than the client still owes on this job' : errText(r.error)); btn.disabled = false; return; }
-      B.jobs = r.jobs; const nj = r.jobs.find(x => x.no === d.no) || j;
+      let nj;
+      if (fast() && j) {
+        j.pays = (j.pays || []).concat([{ id: 'new', date: today(), cash, momo, ref: j.no }]); j.received = r2(j.received + cash + momo); j.cashProfit = r2((j.cashProfit || 0) + cash + momo); nj = j;
+        bgSend({ op: 'jobPay', no: d.no, cash, momo }, 'The client payment');
+      } else {
+        const r = await api('biz', { op: 'jobPay', no: d.no, cash, momo });
+        if (!r.ok) { toast(r.error === 'more_than_owed' ? 'That is more than the client still owes on this job' : errText(r.error)); btn.disabled = false; return; }
+        B.jobs = r.jobs; nj = r.jobs.find(x => x.no === d.no) || j;
+      }
+      B.jtab = 'client';
       const left = r2(Math.max(0, nj.value - nj.received));
       const msg = bizName() + ' - payment received\n' + today() + '\nFrom: ' + nj.customer + '\nJob: ' + nj.no + (nj.title ? ' (' + nj.title + ')' : '') + '\nAmount: ' + money(cash + momo) + (cash && momo ? ' (cash ' + money(cash) + ', MoMo ' + money(momo) + ')' : momo ? ' (MoMo)' : ' (cash)') +
         '\nPaid so far: ' + money(nj.received) + (nj.value ? '\nStill to pay: ' + money(left) : '') + '\nThank you.';
@@ -323,8 +430,8 @@
     } catch (e) { toast('Needs internet'); btn.disabled = false; }
   };
   ACT.jDoc = d => { closeSheet(); S.tab = 'docs'; render(); KL.docs.load().then(() => KL.docs.open(d.no)); };
-  ACT.jStage = async d => { try { const r = await api('biz', { op: 'jobStage', no: B.job.no, stage: d.s }); if (!r.ok) { toast(errText(r.error)); return; } toast(d.s); await loadJobs(); jobSheet(B.job.no); } catch (e) { toast('Needs internet'); } };
-  ACT.jNote = async () => { const t = $('#jnote').value.trim(); if (!t) return; try { await api('biz', { op: 'jobNote', no: B.job.no, note: t }); await loadJobs(); jobSheet(B.job.no); } catch (e) { toast('Needs internet'); } };
+  ACT.jStage = async d => { if (fast() && B.job) { const j = B.job; j.stage = d.s; if (d.s === 'Completed' && !j.finished) j.finished = today(); jobSheet(j.no, true); toast(d.s); bgSend({ op: 'jobStage', no: j.no, stage: d.s }, 'The stage', true); return; } try { const r = await api('biz', { op: 'jobStage', no: B.job.no, stage: d.s }); if (!r.ok) { toast(errText(r.error)); return; } toast(d.s); await loadJobs(); jobSheet(B.job.no); } catch (e) { toast('Needs internet'); } };
+  ACT.jNote = async () => { const t = $('#jnote').value.trim(); if (!t) return; if (fast() && B.job) { const j = B.job; j.data.notes = (j.data.notes || []).concat([{ d: today(), t }]); jobSheet(j.no, true); bgSend({ op: 'jobNote', no: j.no, note: t }, 'The note'); return; } try { await api('biz', { op: 'jobNote', no: B.job.no, note: t }); await loadJobs(); jobSheet(B.job.no); } catch (e) { toast('Needs internet'); } };
 
   /* ---------- workers and subcontractors ---------- */
   const typeBadge = t => '<span class="badge ' + (t === 'Subcontractor' ? 'amber' : t === 'Apprentice' ? '' : 'green') + '">' + esc(t) + '</span>';
@@ -391,13 +498,21 @@
     const cat = who.type === 'Subcontractor' ? 'Subcontractor' : who.type === 'Apprentice' ? 'Apprentice allowance' : 'Wages';
     const pay = { id: KL.uid('E'), cat, amount: a, days: +$('#pd').value || 0, date: $('#pt').value, to: who.name, job: B.payJob, note: [$('#pn').value.trim(), 'by ' + $('#pm').value].filter(Boolean).join(' · ') };
     btn.disabled = true;
+    const method = $('#pm') ? $('#pm').value : '';
     try {
-      const r = await api('biz', Object.assign({ op: 'expSave' }, pay));
-      if (!r.ok) { toast(errText(r.error)); btn.disabled = false; return; }
-      toast('Paid ' + money(a) + ' to ' + who.name); B.crew = null; B.crewNames = null; B.exp = null; B.profit = null;
-      await loadJobs(); const j = (B.jobs || []).find(x => x.no === B.payJob); const p = j && (j.people || []).find(x => x.name === who.name);
+      let j, p;
+      if (fast() && J(B.payJob)) {
+        j = J(B.payJob); p = addCostLocal(j, Object.assign({}, pay), who.type);
+        bgSend(Object.assign({ op: 'expSave' }, pay), 'The payment to ' + who.name, true);
+        toast('Paid ' + money(a) + ' to ' + who.name); B.crew = null; B.exp = null; B.profit = null; B.jtab = 'team';
+      } else {
+        const r = await api('biz', Object.assign({ op: 'expSave' }, pay));
+        if (!r.ok) { toast(errText(r.error)); btn.disabled = false; return; }
+        toast('Paid ' + money(a) + ' to ' + who.name); B.crew = null; B.crewNames = null; B.exp = null; B.profit = null; B.jtab = 'team';
+        await loadJobs(); j = (B.jobs || []).find(x => x.no === B.payJob); p = j && (j.people || []).find(x => x.name === who.name);
+      }
       if (who.type === 'Apprentice') { if (j) jobSheet(j.no); else closeSheet(); }   // apprentices: no payment slip
-      else voucherSheet(Object.assign({}, pay, { type: who.type, phone: who.phone, method: $('#pm') ? $('#pm').value : '' }), p, j);
+      else voucherSheet(Object.assign({}, pay, { type: who.type, phone: who.phone, method }), p, j);
     } catch (e) { toast('Needs internet'); btn.disabled = false; }
   };
   // payment receipt the worker or subcontractor signs
@@ -412,13 +527,48 @@
   }
   function voucherSheet(x, p, j) {
     B.voucher = { x, p, j };
-    sheet('<h2>Payment saved</h2>' + voucherHTML(x, p, j) + '<div class="row" style="margin-top:12px"><button class="btn grow" data-act="vPrint">Print / PDF</button><button class="btn grow" data-act="vWa">WhatsApp</button></div><button class="btn ghost block" style="margin-top:8px" data-act="vBack">Back to the job</button>');
+    sheet('<h2>Payment saved</h2>' + voucherHTML(x, p, j) + '<button class="btn primary block" style="margin-top:12px;background:#16A34A;border-color:#16A34A" data-act="vPic">Send slip picture (WhatsApp)</button><div class="row" style="margin-top:8px"><button class="btn grow" data-act="vPrint">Print / PDF</button><button class="btn grow" data-act="vWa">Send as text</button></div><button class="btn ghost block" style="margin-top:8px" data-act="vBack">Back to the job</button>');
   }
   ACT.vBack = () => jobSheet(B.voucher.x.job);
   ACT.vPrint = () => {
     let host = $('#printdoc'); if (host) host.remove(); host = document.createElement('div'); host.id = 'printdoc'; host.innerHTML = voucherHTML(B.voucher.x, B.voucher.p, B.voucher.j); document.body.appendChild(host);
     if (!$('#printcss')) { const st = document.createElement('style'); st.id = 'printcss'; st.textContent = '#printdoc{display:none}@media print{body>*:not(#printdoc){display:none!important}#printdoc{display:block!important;padding:10mm}#printdoc .paper{border:0!important}@page{size:A5;margin:10mm}}'; document.head.appendChild(st); }
     setTimeout(() => window.print(), 80);
+  };
+  // the payment slip as a picture, like a sales receipt
+  async function voucherImage(x, p, j, agree) {
+    const c = cfg(), c1 = c.c1 || '#0077B6', W = 720, pad = 44, F = (z, w) => (w || '') + ' ' + z + 'px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
+    const rows = [[agree ? 'Subcontractor' : 'Paid to', x.to + (x.type && !agree ? ' (' + x.type + ')' : '')], ['Job', x.job + (j ? ' · ' + j.customer : '')]];
+    if (j && j.title) rows.push(['Work', j.title]); if (j && j.site) rows.push(['Site', j.site]); if (x.days) rows.push(['Days worked', String(x.days)]); if (x.note) rows.push([agree ? 'Covers' : 'For', x.note]); if (x.method) rows.push(['Paid by', x.method]);
+    const ag = agree ? (p && p.paid ? [['Already paid', money(p.paid)], ['Still to pay', money(Math.max(0, p.balance || 0))]] : []) : p && p.agreed !== null && p.agreed !== undefined ? [['Agreed price', money(p.agreed)], ['Paid so far', money(p.paid)], [p.balance > 0.004 ? 'Still to pay' : 'Balance', p.balance > 0.004 ? money(p.balance) : 'Fully paid']] : [];
+    const H = 250 + rows.length * 46 + 150 + (ag.length ? ag.length * 42 + 30 : 0) + 190;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); g.fillStyle = c1; g.fillRect(0, 0, W, 12);
+    try { const im = new Image(); im.src = KL.logoSrc(); await new Promise(r => { im.onload = r; im.onerror = r; setTimeout(r, 1500); }); if (im.naturalWidth) g.drawImage(im, pad, 40, 84, 84); } catch (e) { /* no logo */ }
+    let size = 32; g.font = F(size, 'bold'); while (g.measureText(bizName()).width > W - pad * 2 - 110 && size > 20) { size--; g.font = F(size, 'bold'); }
+    g.fillStyle = c1; g.fillText(bizName(), pad + 104, 76);
+    g.fillStyle = '#5B6B78'; g.font = F(19); g.fillText([c.location, [c.phone, c.phone2].filter(Boolean).join(' / ')].filter(Boolean).join('  ·  ').slice(0, 60), pad + 104, 108);
+    g.fillStyle = '#1F2933'; g.font = F(26, 'bold'); g.fillText(agree ? 'AGREED PRICE FOR THE WORK' : 'PAYMENT SLIP', pad, 186);
+    g.textAlign = 'right'; g.font = F(19); g.fillStyle = '#5B6B78'; g.fillText((x.date || today()) + (x.id ? '  ·  No. ' + String(x.id).slice(-6).toUpperCase() : ''), W - pad, 186); g.textAlign = 'left';
+    g.fillStyle = c1; g.fillRect(pad, 204, W - pad * 2, 3);
+    let y = 252; g.font = F(21);
+    rows.forEach(r => { g.fillStyle = '#5B6B78'; g.fillText(r[0], pad, y); g.fillStyle = '#1F2933'; g.font = F(21, 'bold'); let t = String(r[1]); while (g.measureText(t).width > W - pad - 230 && t.length > 4) t = t.slice(0, -2); g.fillText(t, pad + 210, y); g.font = F(21); y += 46; });
+    y += 14; g.fillStyle = '#F1F7FB'; g.fillRect(pad, y, W - pad * 2, 110); g.fillStyle = '#5B6B78'; g.font = F(20); g.fillText(agree ? 'Agreed price (paid in parts as the work goes on)' : 'Amount paid', pad + 22, y + 38);
+    g.fillStyle = '#1F2933'; g.font = F(46, 'bold'); g.fillText(money(x.amount), pad + 22, y + 92); y += 140;
+    if (ag.length) { ag.forEach((r, i) => { g.fillStyle = '#5B6B78'; g.font = F(20); g.fillText(r[0], pad, y); g.textAlign = 'right'; g.fillStyle = i === ag.length - 1 && ag.length > 1 ? (p.balance > 0.004 ? '#B91C1C' : '#15803D') : '#1F2933'; g.font = F(21, 'bold'); g.fillText(r[1], W - pad, y); g.textAlign = 'left'; y += 42; }); y += 20; }
+    y += 50; g.strokeStyle = '#9AA5B1'; g.lineWidth = 2; g.beginPath(); g.moveTo(pad, y); g.lineTo(W / 2 - 24, y); g.moveTo(W / 2 + 24, y); g.lineTo(W - pad, y); g.stroke();
+    g.fillStyle = '#5B6B78'; g.font = F(17); g.textAlign = 'center'; g.fillText(agree ? 'Subcontractor (signature)' : 'Received by (signature)', (pad + W / 2 - 24) / 2, y + 26); g.fillText(agree ? 'For ' + bizName().slice(0, 28) : 'Paid by', (W / 2 + 24 + W - pad) / 2, y + 26);
+    g.font = F(15); g.fillStyle = '#9AA5B1'; g.fillText('Powered by EasySales · 020 320 7240', W / 2, H - 22); g.textAlign = 'left';
+    return new Promise(res => cv.toBlob(res, 'image/png'));
+  }
+  ACT.vPic = async (d, btn) => {
+    const { x, p, j, agree } = B.voucher; if (btn) btn.disabled = true;
+    try {
+      const blob = await voucherImage(x, p, j, agree), file = new File([blob], (agree ? 'agreed-price-' : 'payment-') + String(x.to).replace(/[^\w]+/g, '-') + '-' + (x.date || today()) + '.png', { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: bizName() + ' payment slip' });
+      else { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = file.name; document.body.appendChild(a); a.click(); a.remove(); toast('Picture saved. Attach it in WhatsApp.'); }
+    } catch (e) { if (e && e.name !== 'AbortError') toast('Could not make the picture on this phone'); }
+    if (btn) btn.disabled = false;
   };
   ACT.vWa = () => {
     const { x, p } = B.voucher;
@@ -437,7 +587,14 @@
   ACT.subSave = async (d, btn) => {
     const amt = d.clear ? '' : $('#sa').value; if (!d.clear && !(+amt > 0)) { toast('Enter the agreed price'); return; }
     btn.disabled = true;
-    try { const r = await api('biz', { op: 'subPrice', job: B.subJob, name: $('#sw').value, amount: amt === '' ? '' : +amt, note: $('#sn') ? $('#sn').value : '' }); if (!r.ok) { toast(errText(r.error)); btn.disabled = false; return; } toast('Saved'); B.crew = null; await loadJobs(); jobSheet(B.subJob); } catch (e) { toast('Needs internet'); btn.disabled = false; }
+    const nm = $('#sw').value, body = { op: 'subPrice', job: B.subJob, name: nm, amount: amt === '' ? '' : +amt, note: $('#sn') ? $('#sn').value : '' }, j = J(B.subJob);
+    if (fast() && j) {
+      let p = (j.people || []).find(q => kk(q.name) === kk(nm));
+      if (!p) { p = { name: nm, type: 'Subcontractor', phone: '', days: 0, paid: 0, count: 0, agreed: null, changes: [] }; j.people = (j.people || []).concat([p]); }
+      p.agreed = amt === '' ? null : r2(+amt); if (p.agreed !== null) p.balance = r2(p.agreed - p.paid); else delete p.balance;
+      B.jtab = 'team'; toast('Saved'); B.crew = null; B.job = j; j.subNotes = j.subNotes || {}; j.subNotes[nm] = body.note || ''; bgSend(body, 'The agreed price', true); if (p.agreed !== null) ACT.jAgree({ n: p.name }); else jobSheet(j.no, true); return;
+    }
+    try { const r = await api('biz', body); if (!r.ok) { toast(errText(r.error)); btn.disabled = false; return; } toast('Saved'); B.crew = null; await loadJobs(); jobSheet(B.subJob); } catch (e) { toast('Needs internet'); btn.disabled = false; }
   };
 
   /* ---------- PASTE MANY PRODUCTS (+ pictures matched by file name) ---------- */
@@ -587,8 +744,16 @@
   ACT.xSave = async (d, btn) => {
     const a = +$('#xa').value; if (!(a > 0)) { toast('Enter the amount'); return; }
     btn.disabled = true; const job = $('#xj') ? $('#xj').value : '';
+    const body = { op: 'expSave', id: KL.uid('E'), cat: $('#xc').value, amount: a, date: $('#xd').value, to: $('#xt').value, job, note: $('#xn').value };
+    if (fast()) {
+      const j = job && J(job); if (j) addCostLocal(j, { id: body.id, date: body.date, cat: body.cat, amount: a, note: body.note, to: body.to, days: 0 });
+      toast('Saved'); B.exp = null; B.profit = null;
+      if (j && S.tab === 'jobs') { B.jtab = 'costs'; jobSheet(j.no, true); } else closeSheet();
+      bgSend(body, 'The cost', true).then(() => { if (S.tab === 'money') loadMoney(); });
+      return;
+    }
     try {
-      const r = await api('biz', { op: 'expSave', id: KL.uid('E'), cat: $('#xc').value, amount: a, date: $('#xd').value, to: $('#xt').value, job, note: $('#xn').value });
+      const r = await api('biz', body);
       if (!r.ok) { toast(errText(r.error)); btn.disabled = false; return; }
       toast('Saved'); closeSheet(); B.exp = null; B.profit = null;
       if (job) { await loadJobs(); if (S.tab === 'jobs') jobSheet(job); } if (S.tab === 'money') loadMoney();
