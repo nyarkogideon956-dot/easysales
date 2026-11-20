@@ -291,7 +291,7 @@
   }
   ACT.jAgree = d => {
     const j = B.job, p = j && (j.people || []).find(q => q.name === d.n); if (!p || p.agreed === null) return;
-    const x = { to: p.name, job: j.no, amount: p.agreed, date: today(), note: (j.subNotes && j.subNotes[p.name]) || '' };
+    const x = { to: p.name, job: j.no, amount: p.agreed, date: today(), note: p.note || (j.subNotes && j.subNotes[p.name]) || '' };
     B.voucher = { x, p, j, agree: true };
     sheet('<h2>Agreed price · ' + esc(p.name) + '</h2><p class="small muted" style="margin-top:0">Send this to ' + esc(p.name) + ' so you both have the amount in writing before the work starts.</p>' +
       '<div class="card"><div class="row between"><span>Job</span><b>' + esc(j.no) + ' · ' + esc(j.customer) + '</b></div><div class="row between" style="margin-top:4px"><span>Agreed price</span><b style="font-size:20px">' + money(p.agreed) + '</b></div>' + (p.paid ? '<div class="row between small" style="margin-top:4px"><span>Already paid</span><b>' + money(p.paid) + '</b></div>' : '') + '</div>' +
@@ -328,6 +328,90 @@
   };
 
   /* ---------- client pays on a job ---------- */
+  /* ---------- REQUEST MATERIALS on the company letterhead (typed list -> picture / message for the supplier) ---------- */
+  function parseReq(text) {
+    return String(text || '').split(/\r?\n/).map(l => l.trim().replace(/^(?:[-•*]|\d+[.)])\s+/, '')).filter(Boolean).map(l => {
+      const m = l.match(/^(.+)\s*(?:,|:|=|\s[-–]\s|\s[x×]\s)\s*([^,:=]+)$/i);
+      return m ? { name: m[1].trim(), qty: m[2].trim() } : { name: l, qty: '' };
+    });
+  }
+  const niceDate = v => { const d = new Date(v + 'T00:00:00'); return isNaN(d) ? String(v || '') : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); };
+  async function reqCanvas(R) {
+    const c = cfg(), c1 = c.c1 || '#0077B6', W = 720, pad = 44, F = (z, w) => (w || '') + ' ' + z + 'px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
+    const items = R.items.map(it => ({ n: wrapText(it.name, 382, F(21)), q: wrapText(it.qty || '', 170, F(21, 'bold')) }));
+    const info = [['To', R.to], ['Needed by', R.by ? niceDate(R.by) : ''], ['Deliver to', R.site]].filter(r => r[1]);
+    const infoL = info.map(r => wrapText(r[1], 422, F(21, 'bold')));
+    const noteL = R.note ? wrapText(R.note, W - pad * 2, F(20)) : [];
+    const rowH = it => Math.max(it.n.length, it.q.length) * 27 + 20;
+    const H = 250 + infoL.reduce((t, a) => t + 46 + (a.length - 1) * 28, 0) + 30 + 44 + items.reduce((t, it) => t + rowH(it), 0) + (noteL.length ? 50 + noteL.length * 27 : 0) + 190;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+    let im = null; try { im = new Image(); im.src = KL.logoSrc(); await new Promise(r => { im.onload = r; im.onerror = r; setTimeout(r, 1500); }); if (!im.naturalWidth) im = null; } catch (e) { im = null; }
+    if (im) { const ws = Math.min(440, W - pad * 2) / Math.max(im.naturalWidth, im.naturalHeight), ww = im.naturalWidth * ws, wh = im.naturalHeight * ws; g.save(); g.globalAlpha = 0.07; g.drawImage(im, (W - ww) / 2, 230 + (H - 230 - wh) / 2, ww, wh); g.restore(); }   // faint logo watermark behind the list
+    g.fillStyle = c1; g.fillRect(0, 0, W, 12);
+    if (im) g.drawImage(im, pad, 40, 84, 84);
+    let size = 32; g.font = F(size, 'bold'); while (g.measureText(bizName()).width > W - pad * 2 - 110 && size > 20) { size--; g.font = F(size, 'bold'); }
+    g.fillStyle = c1; g.fillText(bizName(), pad + 104, 76);
+    g.fillStyle = '#5B6B78'; g.font = F(19); g.fillText([c.location, [c.phone, c.phone2].filter(Boolean).join(' / ')].filter(Boolean).join('  ·  ').slice(0, 60), pad + 104, 108);
+    g.fillStyle = '#1F2933'; g.font = F(26, 'bold'); g.fillText('MATERIAL REQUEST', pad, 186);
+    g.textAlign = 'right'; g.font = F(19); g.fillStyle = '#5B6B78'; g.fillText(R.date + '  ·  ' + R.ref, W - pad, 186); g.textAlign = 'left';
+    g.fillStyle = c1; g.fillRect(pad, 204, W - pad * 2, 3);
+    let y = 252;
+    info.forEach((r, i) => { g.fillStyle = '#5B6B78'; g.font = F(21); g.fillText(r[0], pad, y); g.fillStyle = '#1F2933'; g.font = F(21, 'bold'); infoL[i].forEach((t, k) => g.fillText(t, pad + 210, y + k * 28)); y += 46 + (infoL[i].length - 1) * 28; });
+    y += 4; g.fillStyle = '#1F2933'; g.font = F(21); g.fillText('Please supply us with the following:', pad, y); y += 26;
+    g.fillStyle = '#F1F7FB'; g.fillRect(pad, y, W - pad * 2, 40); g.fillStyle = '#5B6B78'; g.font = F(18, 'bold');
+    g.fillText('No.', pad + 12, y + 27); g.fillText('Item', pad + 64, y + 27); g.textAlign = 'right'; g.fillText('Quantity', W - pad - 12, y + 27); g.textAlign = 'left'; y += 40;
+    items.forEach((it, i) => {
+      const h = rowH(it); g.fillStyle = '#5B6B78'; g.font = F(21); g.fillText(String(i + 1), pad + 12, y + 32);
+      g.fillStyle = '#1F2933'; it.n.forEach((t, k) => g.fillText(t, pad + 64, y + 32 + k * 27));
+      g.font = F(21, 'bold'); g.textAlign = 'right'; it.q.forEach((t, k) => g.fillText(t, W - pad - 12, y + 32 + k * 27)); g.textAlign = 'left';
+      y += h; g.strokeStyle = '#E5E7EB'; g.lineWidth = 1; g.beginPath(); g.moveTo(pad, y); g.lineTo(W - pad, y); g.stroke();
+    });
+    if (noteL.length) { y += 36; g.fillStyle = '#5B6B78'; g.font = F(18, 'bold'); g.fillText('Note', pad, y); g.fillStyle = '#1F2933'; g.font = F(20); noteL.forEach((t, k) => g.fillText(t, pad, y + 28 + k * 27)); y += 28 + (noteL.length - 1) * 27; }
+    y += 70; g.strokeStyle = '#9AA5B1'; g.lineWidth = 2; g.beginPath(); g.moveTo(pad, y); g.lineTo(W / 2 - 24, y); g.moveTo(W / 2 + 24, y); g.lineTo(W - pad, y); g.stroke();
+    g.fillStyle = '#5B6B78'; g.font = F(17); g.textAlign = 'center'; g.fillText('Requested by (signature)', (pad + W / 2 - 24) / 2, y + 26); g.fillText('Received by supplier', (W / 2 + 24 + W - pad) / 2, y + 26);
+    g.font = F(15); g.fillStyle = '#9AA5B1'; g.fillText('Powered by EasySales · 020 320 7240', W / 2, H - 22); g.textAlign = 'left';
+    return cv;
+  }
+  ACT.reqOpen = async () => {
+    const L = await sups(), R = B.req = B.req || { sup: '', typed: '', text: '', by: '', site: '', note: '' };
+    const inp = 'width:100%;border:1.5px solid var(--line);border-radius:12px;padding:10px;font:inherit';
+    sheet('<h2>Request materials</h2><p class="small muted" style="margin-top:0">Type what you need, one item per line, like <b>Plasterboard 12mm, 20 sheets</b>. It is made on your company letterhead so you can send it to the supplier.</p>' +
+      '<label>Supplier</label><select id="rqs"><option value="">Choose…</option>' + L.map(x => '<option' + (x.name === R.sup ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '</select>' +
+      '<input id="rqt" placeholder="Or type the company name" value="' + esc(R.typed) + '" style="margin-top:6px">' +
+      '<label>What you need</label><textarea id="rql" rows="8" style="' + inp + '" placeholder="Plasterboard 12mm, 20 sheets&#10;Metal stud 3m, 50 pieces&#10;Screws 25mm, 5 boxes">' + esc(R.text) + '</textarea>' +
+      '<label>Needed by (optional)</label><input id="rqb" type="date" value="' + esc(R.by) + '"><label>Deliver to (optional)</label><input id="rqd" value="' + esc(R.site) + '" placeholder="Example: Site at Kasoa, near the market">' +
+      '<label>Note (optional)</label><input id="rqn" value="' + esc(R.note) + '" placeholder="Example: Please call before delivery">' +
+      '<br><button class="btn primary block" data-act="reqMake">Make the request</button>');
+  };
+  ACT.reqMake = async (d, btn) => {
+    const R = B.req = B.req || {}; R.sup = $('#rqs').value; R.typed = $('#rqt').value.trim(); R.text = $('#rql').value; R.by = $('#rqb').value; R.site = $('#rqd').value.trim(); R.note = $('#rqn').value.trim();
+    const items = parseReq(R.text); if (!items.length) { toast('Type what you need first'); return; }
+    btn.disabled = true;
+    try {
+      const to = R.typed || R.sup, date = today();
+      R.out = { items, to, by: R.by, site: R.site, note: R.note, date, ref: 'MR-' + date.replace(/-/g, '') };
+      const cv = await reqCanvas(R.out); B.reqCv = cv;
+      sheet('<h2>Check your request</h2><img src="' + cv.toDataURL('image/png') + '" alt="" style="width:100%;border:1px solid var(--line);border-radius:12px">' +
+        '<button class="btn primary block" style="margin-top:12px;background:#16A34A;border-color:#16A34A" data-act="reqPic">Send picture (WhatsApp)</button>' +
+        '<button class="btn block" style="margin-top:8px" data-act="reqWa">Send as a message instead</button>' +
+        '<button class="btn ghost block" style="margin-top:8px" data-act="reqOpen">Change the list</button>');
+    } catch (e) { toast('Could not make the request on this phone'); btn.disabled = false; }
+  };
+  ACT.reqPic = async (d, btn) => {
+    const R = B.req && B.req.out; if (!R || !B.reqCv) return; if (btn) btn.disabled = true;
+    try {
+      const blob = await new Promise(res => B.reqCv.toBlob(res, 'image/png')), file = new File([blob], 'material-request-' + R.date + '.png', { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: bizName() + ' material request' });
+      else { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = file.name; document.body.appendChild(a); a.click(); a.remove(); toast('Picture saved. Attach it in WhatsApp.'); }
+    } catch (e) { if (e && e.name !== 'AbortError') toast('Could not make the picture on this phone'); }
+    if (btn) btn.disabled = false;
+  };
+  ACT.reqWa = async () => {
+    const R = B.req && B.req.out; if (!R) return; const sp = (await sups()).find(x => x.name === R.to), c = cfg();
+    const t = 'Hello' + (R.to ? ' ' + R.to : '') + ',\nPlease supply ' + bizName() + ' with:\n' + R.items.map(x => '• ' + x.name + (x.qty ? ': ' + x.qty : '')).join('\n') + (R.by ? '\n\nNeeded by: ' + niceDate(R.by) : '') + (R.site ? '\nDeliver to: ' + R.site : '') + (R.note ? '\n' + R.note : '') + '\n\nThank you.' + (c.phone ? '\n' + bizName() + ' · ' + c.phone : '');
+    window.open('https://wa.me/' + (sp && sp.phone ? waN(sp.phone) : '') + '?text=' + encodeURIComponent(t), '_blank', 'noopener');
+  };
   ACT.jPay = d => {
     const j = (B.jobs || []).find(x => x.no === d.no); if (!j) return;
     const left = r2(Math.max(0, j.value - j.received));
@@ -517,10 +601,11 @@
   };
   // payment receipt the worker or subcontractor signs
   function voucherHTML(x, p, j) {
+    const sc = (p && p.note) || (j && j.subNotes && j.subNotes[x.to]) || '';
     const c = cfg(), c1 = c.c1 || '#7A1F3D', R = (a, b) => '<tr><td style="padding:6px 8px;color:#5B6B78;width:40%">' + a + '</td><td style="padding:6px 8px">' + b + '</td></tr>';
     return '<div class="paper" style="background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;font-size:13px;color:#1F2933">' +
       '<div style="display:flex;gap:10px;align-items:center"><img src="' + KL.logoSrc() + '" alt="" style="width:48px;height:48px;object-fit:contain"><div style="flex:1"><b style="color:' + esc(c1) + '">' + esc(bizName()) + '</b><div style="font-size:11px;color:#5B6B78">' + esc([c.location, c.phone].filter(Boolean).join(' · ')) + '</div></div><div style="text-align:right"><b style="color:' + esc(c1) + '">PAYMENT RECEIPT</b><div style="font-size:11px;color:#5B6B78">' + esc(x.date) + '</div></div></div>' +
-      '<div style="height:3px;background:' + esc(c1) + ';margin:8px 0"></div><table style="width:100%;border-collapse:collapse">' + R('Paid to', '<b>' + esc(x.to) + '</b> (' + esc(x.type || '') + ')') + R('Job', esc(x.job) + (j ? ' · ' + esc(j.customer) : '')) + (x.days ? R('Days worked', x.days) : '') + (x.note ? R('For', esc(x.note)) : '') + '</table>' +
+      '<div style="height:3px;background:' + esc(c1) + ';margin:8px 0"></div><table style="width:100%;border-collapse:collapse">' + R('Paid to', '<b>' + esc(x.to) + '</b> (' + esc(x.type || '') + ')') + R('Job', esc(x.job) + (j ? ' · ' + esc(j.customer) : '')) + (j && j.title ? R('Work', esc(j.title)) : '') + (j && j.site ? R('Site', esc(j.site)) : '') + (sc && sc !== x.note ? R('Agreed work', esc(sc)) : '') + (x.days ? R('Days worked', x.days) : '') + (x.note ? R('For', esc(x.note)) : '') + '</table>' +
       '<div style="margin:12px 0 2px;color:#5B6B78">Amount paid</div><div style="font-size:24px;font-weight:800">' + money(x.amount) + '</div>' +
       (p && p.agreed !== null ? '<table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:12px">' + (p.changes && p.changes.length ? R('First agreed', money(r2(p.agreed - p.changes.reduce((s, c) => s + c.amount, 0)))) + p.changes.map(c => R((c.amount > 0 ? 'Added: ' : 'Reduced: ') + esc(c.reason), (c.amount > 0 ? '+ ' : '− ') + money(Math.abs(c.amount)))).join('') : '') + R(p.changes && p.changes.length ? '<b>Agreed price now</b>' : 'Agreed price', money(p.agreed)) + R('Paid so far (with this)', money(p.paid)) + R('<b>Balance still to pay</b>', '<b>' + money(Math.max(0, p.balance)) + '</b>') + '</table>' : p && p.count > 1 ? '<div style="margin-top:8px">Total paid on this job: <b>' + money(p.paid) + '</b>' + (p.days ? ' for ' + p.days + ' days' : '') + '</div>' : '') +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:36px;font-size:11px;color:#5B6B78;text-align:center"><div style="border-top:1px solid #999;padding-top:4px">Received by (signature)</div><div style="border-top:1px solid #999;padding-top:4px">Paid by</div></div></div>';
@@ -535,13 +620,20 @@
     if (!$('#printcss')) { const st = document.createElement('style'); st.id = 'printcss'; st.textContent = '#printdoc{display:none}@media print{body>*:not(#printdoc){display:none!important}#printdoc{display:block!important;padding:10mm}#printdoc .paper{border:0!important}@page{size:A5;margin:10mm}}'; document.head.appendChild(st); }
     setTimeout(() => window.print(), 80);
   };
+  // splits text into lines that fit a width (for pictures made on a canvas)
+  function wrapText(t, w, font) {
+    const m = document.createElement('canvas').getContext('2d'); m.font = font; const out = []; let line = '';
+    String(t).split(/\s+/).forEach(wd => { const tt = line ? line + ' ' + wd : wd; if (line && m.measureText(tt).width > w) { out.push(line); line = wd; } else line = tt; });
+    if (line) out.push(line); return out.length ? out : [''];
+  }
   // the payment slip as a picture, like a sales receipt
   async function voucherImage(x, p, j, agree) {
     const c = cfg(), c1 = c.c1 || '#0077B6', W = 720, pad = 44, F = (z, w) => (w || '') + ' ' + z + 'px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
     const rows = [[agree ? 'Subcontractor' : 'Paid to', x.to + (x.type && !agree ? ' (' + x.type + ')' : '')], ['Job', x.job + (j ? ' · ' + j.customer : '')]];
-    if (j && j.title) rows.push(['Work', j.title]); if (j && j.site) rows.push(['Site', j.site]); if (x.days) rows.push(['Days worked', String(x.days)]); if (x.note) rows.push([agree ? 'Covers' : 'For', x.note]); if (x.method) rows.push(['Paid by', x.method]);
+    if (j && j.title) rows.push(['Work', j.title]); if (j && j.site) rows.push(['Site', j.site]); if (x.days) rows.push(['Days worked', String(x.days)]); if (x.note) rows.push([agree ? 'Covers' : 'For', x.note]); const scope = !agree && ((p && p.note) || (j && j.subNotes && j.subNotes[x.to])); if (scope && scope !== x.note) rows.push(['Agreed work', scope]); if (x.method) rows.push(['Paid by', x.method]);
     const ag = agree ? (p && p.paid ? [['Already paid', money(p.paid)], ['Still to pay', money(Math.max(0, p.balance || 0))]] : []) : p && p.agreed !== null && p.agreed !== undefined ? [['Agreed price', money(p.agreed)], ['Paid so far', money(p.paid)], [p.balance > 0.004 ? 'Still to pay' : 'Balance', p.balance > 0.004 ? money(p.balance) : 'Fully paid']] : [];
-    const H = 250 + rows.length * 46 + 150 + (ag.length ? ag.length * 42 + 30 : 0) + 190;
+    const wl = rows.map(r => wrapText(String(r[1]), 422, F(21, 'bold'))), extra = wl.reduce((t, a) => t + (a.length - 1) * 28, 0);
+    const H = 250 + extra + rows.length * 46 + 150 + (ag.length ? ag.length * 42 + 30 : 0) + 190;
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
     g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); g.fillStyle = c1; g.fillRect(0, 0, W, 12);
     try { const im = new Image(); im.src = KL.logoSrc(); await new Promise(r => { im.onload = r; im.onerror = r; setTimeout(r, 1500); }); if (im.naturalWidth) g.drawImage(im, pad, 40, 84, 84); } catch (e) { /* no logo */ }
@@ -552,7 +644,7 @@
     g.textAlign = 'right'; g.font = F(19); g.fillStyle = '#5B6B78'; g.fillText((x.date || today()) + (x.id ? '  ·  No. ' + String(x.id).slice(-6).toUpperCase() : ''), W - pad, 186); g.textAlign = 'left';
     g.fillStyle = c1; g.fillRect(pad, 204, W - pad * 2, 3);
     let y = 252; g.font = F(21);
-    rows.forEach(r => { g.fillStyle = '#5B6B78'; g.fillText(r[0], pad, y); g.fillStyle = '#1F2933'; g.font = F(21, 'bold'); let t = String(r[1]); while (g.measureText(t).width > W - pad - 230 && t.length > 4) t = t.slice(0, -2); g.fillText(t, pad + 210, y); g.font = F(21); y += 46; });
+    rows.forEach((r, i) => { g.fillStyle = '#5B6B78'; g.fillText(r[0], pad, y); g.fillStyle = '#1F2933'; g.font = F(21, 'bold'); wl[i].forEach((t, k) => g.fillText(t, pad + 210, y + k * 28)); g.font = F(21); y += 46 + (wl[i].length - 1) * 28; });
     y += 14; g.fillStyle = '#F1F7FB'; g.fillRect(pad, y, W - pad * 2, 110); g.fillStyle = '#5B6B78'; g.font = F(20); g.fillText(agree ? 'Agreed price (paid in parts as the work goes on)' : 'Amount paid', pad + 22, y + 38);
     g.fillStyle = '#1F2933'; g.font = F(46, 'bold'); g.fillText(money(x.amount), pad + 22, y + 92); y += 140;
     if (ag.length) { ag.forEach((r, i) => { g.fillStyle = '#5B6B78'; g.font = F(20); g.fillText(r[0], pad, y); g.textAlign = 'right'; g.fillStyle = i === ag.length - 1 && ag.length > 1 ? (p.balance > 0.004 ? '#B91C1C' : '#15803D') : '#1F2933'; g.font = F(21, 'bold'); g.fillText(r[1], W - pad, y); g.textAlign = 'left'; y += 42; }); y += 20; }
@@ -693,11 +785,14 @@
     let h = '<div class="chips" style="margin-top:6px">' + tabs.map(x => '<button class="chip ' + (B.mtab === x[0] ? 'on' : '') + '" data-act="mTab" data-k="' + x[0] + '">' + x[1] + '</button>').join('') + '</div>';
     if (B.mtab !== 'stock') h += '<label>Month</label><input id="mmonth" type="month" value="' + esc(B.expMonth) + '">';
     if (B.mtab === 'stock') {
-      h += '<div class="row" style="gap:8px;margin:6px 0"><button class="btn primary grow" data-act="sIn">+ Stock in</button><button class="btn grow" data-act="sCount">Count stock</button></div><button class="btn violet block" data-act="bulkOpen" style="margin-bottom:6px">Add many products from a list</button>';
+      h += '<div class="row" style="gap:8px;margin:6px 0"><button class="btn primary grow" data-act="sIn">+ Stock in</button><button class="btn grow" data-act="sCount">Count stock</button></div>' +
+        '<div class="row" style="gap:8px;margin:0 0 6px"><button class="btn grow" style="background:#FFF7ED;border-color:#FDBA74;color:#9A3412" data-act="toBuy">🛒 To buy' + (B.stock ? ' (' + B.stock.filter(p => p.tracked && (p.low || p.level <= 0)).length + ')' : '') + '</button><button class="btn grow" data-act="supList">Suppliers</button></div>' +
+        '<button class="btn block" data-act="reqOpen" style="margin-bottom:6px;background:#EEF6FF;border-color:#93C5FD;color:#1E3A8A">📝 Request materials (company letterhead)</button>' +
+        '<button class="btn violet block" data-act="bulkOpen" style="margin-bottom:6px">Add many products from a list</button>';
       if (!B.stock) return h + '<div class="empty">Loading…</div>';
       const tr = B.stock.filter(p => p.tracked), un = B.stock.filter(p => !p.tracked);
       h += '<div class="stats"><div class="stat"><span>Stock value (cost)</span><b style="font-size:17px">' + money(sum(tr, p => Math.max(0, p.level) * p.cost)) + '</b></div><div class="stat"><span>Low</span><b class="' + (tr.some(p => p.low) ? 'red' : '') + '">' + tr.filter(p => p.low).length + '</b></div></div>';
-      h += '<div class="card" style="padding:4px 14px">' + (tr.length ? tr.map(p => '<div class="item"><span class="grow"><span class="nm">' + esc(p.name) + '</span><br><span class="small muted">in ' + p.in + ' · sold ' + p.sold + (p.adj ? ' · counted ' + (p.adj > 0 ? '+' : '') + p.adj : '') + (p.cost ? ' · cost ' + money(p.cost) : ' · <span class="amber">no cost price</span>') + '</span></span><span class="right"><b class="' + (p.low ? 'red' : '') + '" style="font-size:18px">' + p.level + '</b><br>' + (p.low ? '<span class="badge red">low</span>' : '<span class="small muted">left</span>') + '</span></div>').join('') : '<div class="empty">Tap + Stock in when goods arrive.</div>') + '</div>';
+      h += '<div class="card" style="padding:4px 14px">' + (tr.length ? tr.map(p => '<div class="item"><span class="grow"><span class="nm">' + esc(p.name) + '</span><br><span class="small muted">in ' + fq(p.in, p) + ' · sold ' + fq(p.sold, p) + (p.adj ? ' · counted ' + (p.adj > 0 ? '+' : '') + p.adj : '') + (p.cost ? ' · cost ' + money(p.cost) : ' · <span class="amber">no cost price</span>') + '</span></span><span class="right"><b class="' + (p.low || p.level <= 0 ? 'red' : '') + '" style="font-size:' + (p.per ? 15 : 18) + 'px">' + fq(p.level, p) + '</b><br>' + (p.level <= 0 ? '<span class="badge red">out</span>' : p.low ? '<span class="badge red">low</span>' : '<span class="small muted">left</span>') + '</span></div>').join('') : '<div class="empty">Tap + Stock in when goods arrive.</div>') + '</div>';
       if (un.length) h += '<p class="small muted">Not counted yet: ' + un.map(p => esc(p.name)).join(', ') + '</p>';
       return h;
     }
@@ -724,12 +819,85 @@
     return h;
   }
   const prodOpts = () => ((S.lists && S.lists.products) || (S.cache && S.cache.products) || []).map(p => '<option>' + esc(p.name) + '</option>').join('');
-  ACT.sIn = () => sheet('<h2>Stock in</h2><label>Product</label><select id="sp">' + prodOpts() + '</select><div class="picker"><div><label>Quantity</label><input id="sq" type="number" inputmode="decimal"></div><div><label>Cost per unit (GH₵)</label><input id="sc" type="number" inputmode="decimal" placeholder="optional"></div></div><label>Note (supplier, invoice no.)</label><input id="sn"><br><button class="btn primary block" data-act="sSave" data-k="stockIn">Save</button>');
-  ACT.sCount = () => sheet('<h2>Count stock</h2><p class="small muted" style="margin-top:0">Type what is really on the shelf. The difference is recorded.</p><label>Product</label><select id="sp">' + prodOpts() + '</select><label>Counted quantity</label><input id="sq" type="number" inputmode="decimal"><label>Note</label><input id="sn" placeholder="optional"><br><button class="btn primary block" data-act="sSave" data-k="stockCount">Save</button>');
+  // quantities: cartons / packs and pieces
+  const UNS = { Carton: 'ctn', Pack: 'pack', Dozen: 'dozen', Box: 'box', Roll: 'roll', Bundle: 'bundle', Bag: 'bag' };
+  const uns = u => UNS[u] || String(u || 'ctn').toLowerCase();
+  const pinfo = n => { const a = (S.lists && S.lists.products) || [], b = (S.cache && S.cache.products) || [], c = B.stock || []; return a.find(x => x.name === n) || c.find(x => x.name === n) || b.find(x => x.name === n) || {}; };
+  function fq(v, p) {
+    if (!p || !(p.per > 1)) return String(v);
+    const neg = v < 0, a = Math.abs(v), c = Math.floor(a / p.per), r = r2(a - c * p.per);
+    return (neg ? '−' : '') + ([c ? c + ' ' + uns(p.un) : '', r ? r + ' pcs' : ''].filter(Boolean).join(' + ') || '0');
+  }
+  KL.fq = fq;
+  const qtyBox = (p, label) => (p.per > 1 ? '<div class="picker"><div><label>' + esc(p.un || 'Carton') + 's (' + p.per + ' each)</label><input id="sqc" type="number" inputmode="decimal" placeholder="0"></div><div><label>Loose pieces</label><input id="sq" type="number" inputmode="decimal" placeholder="0"></div></div>' : '<label>' + label + '</label><input id="sq" type="number" inputmode="decimal">');
+  function stockForm(k, name) {
+    const all = (S.lists && S.lists.products) || (S.cache && S.cache.products) || [];
+    if (!name && all.length) name = all[0].name;
+    const p = pinfo(name) || {}, inn = k === 'stockIn';
+    sheet('<h2>' + (inn ? 'Stock in' : 'Count stock') + '</h2>' + (inn ? '' : '<p class="small muted" style="margin-top:0">Type what is really on the shelf. The difference is recorded.</p>') +
+      '<label>Product</label><select id="sp">' + all.map(x => '<option' + (x.name === name ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '</select>' +
+      qtyBox(p, inn ? 'Quantity' : 'Counted quantity') +
+      (inn ? (p.per > 1 ? '<div class="picker"><div><label>Cost per ' + uns(p.un) + ' (GH₵)</label><input id="scc" type="number" inputmode="decimal" placeholder="optional"></div><div><label>or cost per piece</label><input id="sc" type="number" inputmode="decimal" placeholder="optional"></div></div>' : '<label>Cost per unit (GH₵)</label><input id="sc" type="number" inputmode="decimal" placeholder="optional">') + '<label>Note (supplier, invoice no.)</label><input id="sn" value="' + esc(p.sup || '') + '">' : '<label>Note</label><input id="sn" placeholder="optional">') +
+      '<br><button class="btn primary block" data-act="sSave" data-k="' + k + '">Save</button>');
+    const sel = $('#sp'); if (sel) sel.addEventListener('change', () => stockForm(k, sel.value));
+  }
+  ACT.sIn = d => stockForm('stockIn', d && d.p);
+  ACT.sCount = d => stockForm('stockCount', d && d.p);
   ACT.sSave = async (d, btn) => {
-    const q = $('#sq').value; if (q === '') { toast('Enter the quantity'); return; }
+    const name = $('#sp').value, p = pinfo(name), c = $('#sqc') ? +$('#sqc').value || 0 : 0, pc = $('#sq').value;
+    if (c === 0 && pc === '') { toast('Enter the quantity'); return; }
+    const qty = r2(c * (p.per > 1 ? p.per : 1) + (+pc || 0));
+    let cost = $('#sc') ? +$('#sc').value || 0 : 0; if (!cost && $('#scc') && +$('#scc').value > 0 && p.per > 1) cost = Math.round(+$('#scc').value / p.per * 10000) / 10000;
     btn.disabled = true;
-    try { const r = await api('biz', { op: d.k, id: KL.uid('S'), product: $('#sp').value, qty: +q, cost: $('#sc') ? +$('#sc').value || 0 : 0, note: $('#sn').value }); if (!r.ok) { toast(errText(r.error)); btn.disabled = false; return; } B.stock = r.list; toast('Saved'); closeSheet(); render(true); KL.refreshCache && KL.refreshCache(); } catch (e) { toast('Needs internet'); btn.disabled = false; }
+    try { const r = await api('biz', { op: d.k, id: KL.uid('S'), product: name, qty, cost, note: $('#sn').value }); if (!r.ok) { toast(errText(r.error)); btn.disabled = false; return; } B.stock = r.list; toast('Saved'); closeSheet(); render(true); KL.refreshCache && KL.refreshCache(); } catch (e) { toast('Needs internet'); btn.disabled = false; }
+  };
+
+  /* ---------- suppliers and the "To buy" list ---------- */
+  async function sups(force) {
+    if (S.lists && S.lists.suppliers && !force) return S.lists.suppliers;
+    try { const r = await api('admin', { op: 'lists' }); if (r.ok) { S.lists = r; KL.kvSet('lists', r).catch(() => {}); } } catch (e) { /* offline */ }
+    return (S.lists && S.lists.suppliers) || [];
+  }
+  const waN = p => { let n = String(p || '').replace(/[^\d]/g, ''); if (n.startsWith('0')) n = '233' + n.slice(1); return n; };
+  const plural = (u, q) => q === 1 ? u : u === 'box' ? 'boxes' : u === 'pcs' ? 'pcs' : u + 's';
+  ACT.toBuy = async () => {
+    if (!B.stock) await loadStock();
+    const list = (B.stock || []).filter(p => p.tracked && (p.low || p.level <= 0));
+    const S2 = await sups(), by = {};
+    list.forEach(p => { const k = p.sup || ''; (by[k] = by[k] || []).push(p); });
+    const sugg = p => { const tgt = Math.max(p.lowAt * 2, p.lowAt + (p.per || 1)), need = Math.max(tgt - Math.max(p.level, 0), p.per || 1); return p.per > 1 ? Math.ceil(need / p.per) : Math.ceil(need); };
+    B.buy = list.map(p => ({ name: p.name, sup: p.sup || '', per: p.per, un: p.un, q: sugg(p), level: p.level }));
+    sheet('<h2>🛒 To buy</h2><p class="small muted" style="margin-top:0">Products that are low or finished, with how many to order. Change the numbers if you like, then send the list to the supplier.</p>' +
+      (list.length ? Object.keys(by).sort().map(k => { const sp = S2.find(x => x.name === k);
+        return '<div class="card" style="padding:8px 14px"><div class="row between"><b>' + (k ? esc(k) : 'No supplier set') + '</b>' + (sp && sp.phone ? '<span class="small muted">' + esc(sp.phone) + '</span>' : '') + '</div>' +
+          by[k].map(p => { const i = B.buy.findIndex(x => x.name === p.name); return '<div class="row between" style="padding:6px 0;border-bottom:1px solid var(--line);gap:8px"><span class="grow"><span class="nm">' + esc(p.name) + '</span><br><span class="small ' + (p.level <= 0 ? 'red' : 'amber') + '">' + (p.level <= 0 ? 'Finished' : 'Left: ' + fq(p.level, p)) + '</span></span><input data-bq="' + i + '" type="number" inputmode="numeric" value="' + B.buy[i].q + '" style="width:64px;text-align:center"><span class="small" style="width:44px">' + (p.per > 1 ? uns(p.un) : 'pcs') + '</span></div>'; }).join('') +
+          '<button class="btn primary block" style="margin-top:8px;background:#16A34A;border-color:#16A34A" data-act="buySend" data-s="' + esc(k) + '">Send to ' + (k ? esc(k) : 'supplier') + ' on WhatsApp</button></div>'; }).join('') : '<div class="empty">Nothing is low. 👍</div>') +
+      '<p class="small muted">Set each product\'s supplier and “warn me when below” in Setup → Products.</p>');
+  };
+  ACT.buySend = async d => {
+    document.querySelectorAll('[data-bq]').forEach(e => { const it = B.buy[+e.dataset.bq]; if (it) it.q = +e.value || 0; });
+    const items = B.buy.filter(x => x.sup === d.s && x.q > 0); if (!items.length) { toast('Nothing to order'); return; }
+    const sp = (await sups()).find(x => x.name === d.s), c = cfg();
+    const t = 'Hello' + (d.s ? ' ' + d.s : '') + ',\nPlease supply ' + bizName() + ' with:\n' + items.map(x => '• ' + x.name + ': ' + x.q + ' ' + plural(x.per > 1 ? uns(x.un) : 'pcs', x.q)).join('\n') + '\n\nThank you.' + (c.phone ? '\n' + bizName() + ' · ' + c.phone : '');
+    window.open('https://wa.me/' + (sp && sp.phone ? waN(sp.phone) : '') + '?text=' + encodeURIComponent(t), '_blank', 'noopener');
+  };
+  ACT.supList = async () => {
+    const L = await sups(true), P = (S.lists && S.lists.products) || [];
+    sheet('<h2>Suppliers</h2><button class="btn primary block" data-act="supEdit" data-n="">+ Add supplier</button>' +
+      '<div class="card" style="padding:4px 14px;margin-top:10px">' + (L.length ? L.map(x => { const ps = P.filter(p => kk(p.sup) === kk(x.name)); return '<button class="item" data-act="supEdit" data-n="' + esc(x.name) + '"><span class="grow"><span class="nm">' + esc(x.name) + '</span><br><span class="small muted">' + esc([x.phone, x.note].filter(Boolean).join(' · ')) + '<br>' + (ps.length ? ps.length + ' product' + (ps.length > 1 ? 's' : '') + ': ' + esc(ps.slice(0, 4).map(p => p.name).join(', ')) + (ps.length > 4 ? '…' : '') : 'No products linked yet') + '</span></span><span class="muted">›</span></button>'; }).join('') : '<div class="empty">Add the people you buy from. Then link products to them in Setup → Products.</div>') + '</div>');
+  };
+  ACT.supEdit = async d => {
+    const x = d.n ? ((await sups()).find(s => s.name === d.n) || null) : null; B.supOld = x ? x.name : '';
+    sheet('<h2>' + (x ? 'Edit supplier' : 'New supplier') + '</h2><label>Name</label><input id="sun" value="' + esc(x ? x.name : '') + '" placeholder="Example: Kofi Wholesale, Accra"><label>Phone (WhatsApp)</label><input id="sup" inputmode="tel" value="' + esc(x ? x.phone : '') + '"><label>What they supply / note</label><input id="sunote" value="' + esc(x ? x.note : '') + '" placeholder="Example: plasterboard, screws, angles">' +
+      '<br><button class="btn primary block" data-act="supSave">Save</button>' + (x ? '<button class="btn danger block" style="margin-top:8px" data-act="supDel">Delete</button>' : '') + '<button class="btn ghost block" style="margin-top:8px" data-act="supList">Back</button>');
+  };
+  ACT.supSave = async (d, b) => {
+    const name = $('#sun').value.trim(); if (!name) { toast('Type the name'); return; } b.disabled = true;
+    try { const r = await api('more', { op: 'supSave', old: B.supOld, name, phone: $('#sup').value, note: $('#sunote').value }); if (!r.ok) { toast(errText(r.error)); b.disabled = false; return; } if (S.lists) S.lists.suppliers = r.suppliers; toast('Saved'); B.stock = null; ACT.supList(); } catch (e) { toast('Needs internet'); b.disabled = false; }
+  };
+  ACT.supDel = async (d, b) => {
+    if (!confirm('Delete ' + B.supOld + '?')) return; b.disabled = true;
+    try { const r = await api('more', { op: 'supDel', name: B.supOld }); if (r.ok && S.lists) S.lists.suppliers = r.suppliers; ACT.supList(); } catch (e) { toast('Needs internet'); b.disabled = false; }
   };
   ACT.xNew = async d => {
     if (!B.cats.length) { try { const r = await api('biz', { op: 'expenses', month: B.expMonth }); if (r.ok) B.cats = r.cats; } catch (e) { /* offline */ } }

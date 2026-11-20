@@ -197,7 +197,7 @@
   guard('savesale', () => {
     const k = saleCalc(); if (!k) return null;
     if (k.bal < -0.004 && !k.okExtra) return null;
-    const rows = [['Customer', k.c.customer]].concat(k.c.lines.map(l => [l.q + ' × ' + l.p, money(l.q * l.u)]));
+    const rows = [['Customer', k.c.customer]].concat(k.c.lines.map(l => [l.q + ' × ' + (KL.lineName ? KL.lineName(l) : l.p), money(l.q * l.u)]));
     rows.push(['Total', money(k.t)]);
     if (k.cash) rows.push(['Cash given', money(k.cash)]); if (k.momo) rows.push(['MoMo given', money(k.momo)]);
     if (k.extra > 0) {

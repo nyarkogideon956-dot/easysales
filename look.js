@@ -228,7 +228,7 @@ html,body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif
     if (k === 'WB') { S.tab = 'docs'; KL.docs.state.type = 'INV'; render(); await KL.docs.load(); KL.toast('Open an invoice, then tap Make waybill'); return; }
     return newDoc(k);
   };
-  ACT.att = d => { if (d.k === 'doc') { S.tab = 'docs'; KL.docs.state.type = 'INV'; render(); KL.docs.open(d.no); } else ACT.tab({ t: d.k }); };
+  ACT.att = d => { if (d.k === 'buy') { S.tab = 'money'; render(); ACT.mTab && ACT.mTab({ k: 'stock' }); setTimeout(() => ACT.toBuy && ACT.toBuy(), 300); return; } if (d.k === 'doc') { S.tab = 'docs'; KL.docs.state.type = 'INV'; render(); KL.docs.open(d.no); } else ACT.tab({ t: d.k }); };
   ACT.fab = () => {
     if (!isOwner()) return ACT.tab({ t: 'sell' });
     const o = has('sell') ? [['sale', 'New sale']] : [];
