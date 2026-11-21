@@ -1153,12 +1153,13 @@
   'use strict';
   const KL = window.KL; if (!KL) return;
   const { S, ACT, esc, money, toast, sheet, cfg, bizName } = KL;
-  const PL = { ws: false, cats: null };
+  const PL = { ws: false, cats: null, off: new Set() };
   const prods = () => ((S.cache && S.cache.products) || []).slice().sort((a, b) => (a.cat || 'zz').localeCompare(b.cat || 'zz') || a.name.localeCompare(b.name));
   const UNS = { Carton: 'ctn', Pack: 'pack', Dozen: 'dozen', Box: 'box', Roll: 'roll', Bundle: 'bundle', Bag: 'bag' };
   const uns = u => UNS[u] || String(u || 'ctn').toLowerCase();
   const piece = p => PL.ws && p.wp > 0 ? p.wp : p.price;
-  const chosen = () => prods().filter(p => !PL.cats || PL.cats.includes(p.cat || 'Others'));
+  const inCats = () => prods().filter(p => !PL.cats || PL.cats.includes(p.cat || 'Others'));
+  const chosen = () => inCats().filter(p => !PL.off.has(p.name));
   const _render = KL.fn('render');
   KL.setFn('render', function (k) {
     _render(k);
@@ -1173,13 +1174,21 @@
     sheet('<h2>Price list</h2><p class="small muted" style="margin-top:0">Send your prices to a customer on WhatsApp.</p>' +
       (anyWs ? '<div class="seg"><button class="' + (PL.ws ? '' : 'on') + '" data-act="plWs" data-w="0">Retail prices</button><button class="' + (PL.ws ? 'on' : '') + '" data-act="plWs" data-w="1">Wholesale prices</button></div>' : '') +
       (cats.length > 1 ? '<label>Which groups?</label><div class="chips" style="flex-wrap:wrap">' + cats.map(c => '<button class="chip ' + (PL.cats.includes(c) ? 'on' : '') + '" data-act="plCat" data-c="' + esc(c) + '">' + esc(c) + '</button>').join('') + '</div>' : '') +
-      '<div class="card" style="padding:4px 14px;max-height:280px;overflow:auto">' + chosen().map(p => '<div class="row between small" style="padding:5px 0;border-bottom:1px solid var(--line)"><span>' + esc(p.name) + '</span><b>' + money(piece(p)) + (p.per > 1 && p.pk ? ' · ' + uns(p.un) + ' ' + money(p.pk) : '') + '</b></div>').join('') + '</div>' +
+      '<div class="row between small" style="margin-top:8px"><span id="plcnt"><b>' + chosen().length + '</b> of ' + inCats().length + ' products selected</span><span><button class="chip" data-act="plAll" data-v="1">Tick all</button> <button class="chip" data-act="plAll" data-v="0">Untick all</button></span></div>' +
+      '<p class="small muted" style="margin:4px 0">Tap a product to tick or untick it.</p>' +
+      '<div class="card" style="padding:4px 14px;max-height:280px;overflow:auto">' + inCats().map(p => '<button data-act="plProd" data-n="' + esc(p.name) + '" style="display:flex;width:100%;justify-content:space-between;gap:8px;align-items:center;padding:8px 0;border:0;border-bottom:1px solid var(--line);background:none;text-align:left;font:inherit;font-size:13px;color:inherit"><span class="plt">' + (PL.off.has(p.name) ? '☐ ' : '☑ ') + esc(p.name) + '</span><b>' + money(piece(p)) + (p.per > 1 && p.pk ? ' · ' + uns(p.un) + ' ' + money(p.pk) : '') + '</b></button>').join('') + '</div>' +
       '<button class="btn primary block" style="background:#16A34A;border-color:#16A34A" data-act="plPic">Send as picture</button><button class="btn block" style="margin-top:8px" data-act="plText">Send as text</button>');
   };
   ACT.plWs = d => { PL.ws = d.w === '1'; ACT.plOpen(); };
   ACT.plCat = d => { const i = PL.cats.indexOf(d.c); if (i >= 0) PL.cats.splice(i, 1); else PL.cats.push(d.c); ACT.plOpen(); };
+  ACT.plProd = d => {
+    if (PL.off.has(d.n)) PL.off.delete(d.n); else PL.off.add(d.n);
+    const b = Array.from(document.querySelectorAll('[data-act="plProd"]')).find(x => x.dataset.n === d.n), t = b && b.querySelector('.plt'); if (t) t.textContent = (PL.off.has(d.n) ? '☐ ' : '☑ ') + d.n;
+    const c = document.getElementById('plcnt'); if (c) c.innerHTML = '<b>' + chosen().length + '</b> of ' + inCats().length + ' products selected';
+  };
+  ACT.plAll = d => { if (d.v === '1') PL.off.clear(); else inCats().forEach(p => PL.off.add(p.name)); ACT.plOpen(); };
   ACT.plText = () => {
-    const L = chosen(); if (!L.length) { toast('Choose at least one group'); return; }
+    const L = chosen(); if (!L.length) { toast('Tick at least one product'); return; }
     const c = cfg(), by = {}; L.forEach(p => { (by[p.cat || 'Others'] = by[p.cat || 'Others'] || []).push(p); });
     const t = bizName() + ' - ' + (PL.ws ? 'WHOLESALE ' : '') + 'PRICE LIST\n' + new Date().toISOString().slice(0, 10) + '\n' +
       Object.keys(by).map(k => '\n*' + k + '*\n' + by[k].map(p => '• ' + p.name + ': ' + money(piece(p)) + (p.per > 1 && p.pk ? ' | ' + uns(p.un) + ' of ' + p.per + ': ' + money(p.pk) : '')).join('\n')).join('\n') +
@@ -1215,7 +1224,7 @@
     return new Promise(res => cv.toBlob(res, 'image/png'));
   }
   ACT.plPic = async (d, b) => {
-    if (!chosen().length) { toast('Choose at least one group'); return; } if (b) b.disabled = true;
+    if (!chosen().length) { toast('Tick at least one product'); return; } if (b) b.disabled = true;
     try {
       const blob = await picture(), file = new File([blob], 'price-list-' + new Date().toISOString().slice(0, 10) + '.png', { type: 'image/png' });
       if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: bizName() + ' price list' });
@@ -1223,4 +1232,199 @@
     } catch (e) { if (e && e.name !== 'AbortError') toast('Could not make the picture on this phone'); }
     if (b) b.disabled = false;
   };
+})();
+
+/* EasySales - flyer (up to 6 products, no prices unless asked) and one-product advert, made as pictures for WhatsApp and social media */
+(function () {
+  'use strict';
+  const KL = window.KL; if (!KL) return;
+  const { S, ACT, esc, money, toast, sheet, cfg, bizName } = KL;
+  const FL = { sel: [], head: '', sub: '', prices: false, cv: null };
+  const AD = { name: '', head: '', body: '', cap: '', prices: false, size: 'post', photo: '', cv: null };
+  const prods = () => ((S.cache && S.cache.products) || []).slice().sort((a, b) => (a.cat || 'zz').localeCompare(b.cat || 'zz') || a.name.localeCompare(b.name));
+  const photo = n => (S.photos && S.photos[n]) || '';
+  const F = (z, w) => (w || '') + ' ' + z + 'px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
+  const loadImg = src => new Promise(res => { if (!src) return res(null); const im = new Image(); im.onload = () => res(im.naturalWidth ? im : null); im.onerror = () => res(null); im.src = src; setTimeout(() => res(null), 4000); });
+  const mctx = document.createElement('canvas').getContext('2d');
+  function wrap(t, w, font) {
+    mctx.font = font; const out = []; let line = '';
+    String(t || '').split(/\r?\n/).forEach(par => {
+      line = '';
+      par.split(/\s+/).filter(Boolean).forEach(wd => { const tt = line ? line + ' ' + wd : wd; if (line && mctx.measureText(tt).width > w) { out.push(line); line = wd; } else line = tt; });
+      if (line) out.push(line);
+    });
+    return out;
+  }
+  function fit(t, w, maxLines, max, min, weight) {
+    for (let z = max; z >= min; z -= 2) { const L = wrap(t, w, F(z, weight)); if (L.length <= maxLines) return { z, L }; }
+    const L = wrap(t, w, F(min, weight)).slice(0, maxLines); if (L.length) L[L.length - 1] = L[L.length - 1].replace(/\s*\S*$/, '') + '…'; return { z: min, L };
+  }
+  function rr(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+  // picture shown whole (not cropped) inside a rounded box
+  function contain(g, im, x, y, w, h, r) {
+    g.save(); rr(g, x, y, w, h, r); g.clip(); g.fillStyle = '#F1F5F9'; g.fillRect(x, y, w, h);
+    if (im) { const s = Math.min((w - 16) / im.naturalWidth, (h - 16) / im.naturalHeight), dw = im.naturalWidth * s, dh = im.naturalHeight * s; g.drawImage(im, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh); }
+    else { g.fillStyle = '#CBD5E1'; g.font = F(26); g.textAlign = 'center'; g.fillText('No picture yet', x + w / 2, y + h / 2); g.textAlign = 'left'; }
+    g.restore();
+  }
+  function header(g, W, h, c, c1, logo) {
+    g.fillStyle = c1; g.fillRect(0, 0, W, h);
+    const bx = 40, bs = h - 60;
+    g.fillStyle = '#fff'; rr(g, bx, 30, bs, bs, 20); g.fill();
+    if (logo) { const s = Math.min((bs - 20) / logo.naturalWidth, (bs - 20) / logo.naturalHeight); g.drawImage(logo, bx + (bs - logo.naturalWidth * s) / 2, 30 + (bs - logo.naturalHeight * s) / 2, logo.naturalWidth * s, logo.naturalHeight * s); }
+    const tx = bx + bs + 30, tw = W - tx - 40; g.fillStyle = '#fff';
+    const nm = fit(bizName(), tw, 2, 54, 30, 'bold'); g.font = F(nm.z, 'bold'); nm.L.forEach((t, i) => g.fillText(t, tx, 30 + bs / 2 - 16 - (nm.L.length - 1) * nm.z * 0.55 + i * nm.z * 1.1 + nm.z * 0.3));
+    const sub = [c.location, [c.phone, c.phone2].filter(Boolean).join(' / ')].filter(Boolean).join('  ·  ');
+    if (sub) { g.font = F(24); g.globalAlpha = 0.92; g.fillText(wrap(sub, tw, F(24))[0] || '', tx, h - 34); g.globalAlpha = 1; }
+  }
+  function footer(g, W, y, h, c, c1) {
+    g.fillStyle = c1; g.fillRect(0, y, W, h); g.fillStyle = '#fff'; g.textAlign = 'center';
+    const ph = [c.phone, c.phone2].filter(Boolean).join(' / ');
+    g.font = F(40, 'bold'); g.fillText(ph ? 'Call / WhatsApp: ' + ph : bizName(), W / 2, y + h / 2 - (c.location ? 4 : -12));
+    if (c.location) { g.font = F(26); g.globalAlpha = 0.92; g.fillText(wrap(c.location, W - 100, F(26))[0] || '', W / 2, y + h / 2 + 38); g.globalAlpha = 1; }
+    g.textAlign = 'left';
+  }
+  function watermark(g, W, y0, y1, logo) {
+    if (!logo) return; const box = Math.min(W * 0.72, y1 - y0), s = box / Math.max(logo.naturalWidth, logo.naturalHeight), dw = logo.naturalWidth * s, dh = logo.naturalHeight * s;
+    g.save(); g.globalAlpha = 0.06; g.drawImage(logo, (W - dw) / 2, y0 + (y1 - y0 - dh) / 2, dw, dh); g.restore();
+  }
+  async function share(cv, fname, title, btn) {
+    if (btn) btn.disabled = true;
+    try {
+      const blob = await new Promise(r => cv.toBlob(r, 'image/png')), file = new File([blob], fname, { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title });
+      else { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = file.name; document.body.appendChild(a); a.click(); a.remove(); toast('Picture saved. Attach it in WhatsApp or post it.'); }
+    } catch (e) { if (e && e.name !== 'AbortError') toast('Could not make the picture on this phone'); }
+    if (btn) btn.disabled = false;
+  }
+  const tick = 'display:flex;width:100%;justify-content:space-between;gap:8px;align-items:center;padding:8px 0;border:0;border-bottom:1px solid var(--line);background:none;text-align:left;font:inherit;font-size:13px;color:inherit';
+  const box = 'display:flex;gap:8px;align-items:center;font-weight:600;color:var(--ink);margin-top:10px';
+
+  /* ---------- FLYER: up to 6 products, no prices unless ticked ---------- */
+  async function flyerCanvas() {
+    const c = cfg(), c1 = c.c1 || '#0077B6', W = 1080, pad = 50, gap = 36, logo = await loadImg(KL.logoSrc());
+    const P = FL.sel.map(n => prods().find(p => p.name === n)).filter(Boolean), imgs = await Promise.all(P.map(p => loadImg(photo(p.name))));
+    const cw = (W - pad * 2 - gap) / 2, ih = 300, showP = FL.prices, cellH = ih + 24 + 2 * 36 + (showP ? 48 : 0) + 16;
+    const head = fit(FL.head || 'What we sell', W - pad * 2, 3, 74, 44, 'bold'), subL = FL.sub ? fit(FL.sub, W - pad * 2, 2, 34, 24, '') : null;
+    const headH = 44 + head.L.length * Math.round(head.z * 1.15) + (subL ? 14 + subL.L.length * Math.round(subL.z * 1.3) : 0) + 34;
+    const rows = Math.ceil(P.length / 2), HH = 250, FH = 150, H = HH + headH + rows * (cellH + gap) + FH - (rows ? 0 : 0);
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); watermark(g, W, HH, H - FH, logo); header(g, W, HH, c, c1, logo);
+    let y = HH + 44; g.fillStyle = c1; g.font = F(head.z, 'bold'); g.textAlign = 'center';
+    head.L.forEach(t => { y += Math.round(head.z * 1.15); g.fillText(t, W / 2, y - 8); });
+    if (subL) { y += 14; g.fillStyle = '#334155'; g.font = F(subL.z); subL.L.forEach(t => { y += Math.round(subL.z * 1.3); g.fillText(t, W / 2, y - 8); }); }
+    g.textAlign = 'left'; y = HH + headH;
+    P.forEach((p, i) => {
+      const r = Math.floor(i / 2), col = i % 2, last = r === rows - 1 && P.length % 2 === 1, x = last ? (W - cw) / 2 : pad + col * (cw + gap), cy = y + r * (cellH + gap);
+      g.fillStyle = '#fff'; rr(g, x, cy, cw, cellH, 22); g.fill(); g.strokeStyle = '#E2E8F0'; g.lineWidth = 2; g.stroke();
+      contain(g, imgs[i], x + 12, cy + 12, cw - 24, ih, 14);
+      const nl = wrap(p.name, cw - 28, F(28, 'bold')).slice(0, 2); g.fillStyle = '#1F2933'; g.font = F(28, 'bold'); g.textAlign = 'center';
+      nl.forEach((t, k) => g.fillText(t, x + cw / 2, cy + ih + 24 + 30 + k * 34));
+      if (showP && p.price > 0) { g.fillStyle = c1; g.font = F(34, 'bold'); g.fillText(money(p.price), x + cw / 2, cy + ih + 24 + 2 * 34 + 40); }
+      g.textAlign = 'left';
+    });
+    footer(g, W, H - FH, FH, c, c1);
+    return cv;
+  }
+  ACT.flOpen = () => {
+    const L = prods(); if (!L.length) { toast('Add your products first in Setup → Products'); return; }
+    FL.sel = FL.sel.filter(n => L.some(p => p.name === n));
+    sheet('<h2>Make a flyer</h2><p class="small muted" style="margin-top:0">A flyer for up to 6 products, to send on WhatsApp or post on social media. Product pictures come from Setup → Products.</p>' +
+      '<label>Headline</label><input id="flh" value="' + esc(FL.head) + '" placeholder="Example: Plasterboard and ceiling accessories">' +
+      '<label>Line under it (optional)</label><input id="fls" value="' + esc(FL.sub) + '" placeholder="Example: Supply and fixing available">' +
+      '<label style="' + box + '"><input id="flp" type="checkbox" style="width:20px;height:20px;min-height:0"' + (FL.prices ? ' checked' : '') + '> Show prices on the flyer</label>' +
+      '<label>Choose up to 6 products</label><div id="flc" class="small" style="margin:0 0 4px"><b>' + FL.sel.length + '</b> of 6 chosen</div>' +
+      '<div class="card" style="padding:4px 14px;max-height:280px;overflow:auto">' + L.map(p => '<button data-act="flProd" data-n="' + esc(p.name) + '" style="' + tick + '"><span class="plt">' + (FL.sel.includes(p.name) ? '☑ ' : '☐ ') + esc(p.name) + '</span><span class="small muted">' + esc(p.cat || '') + (photo(p.name) ? ' 📷' : '') + '</span></button>').join('') + '</div>' +
+      '<br><button class="btn primary block" data-act="flMake">Make the flyer</button>');
+  };
+  ACT.flProd = d => {
+    const i = FL.sel.indexOf(d.n);
+    if (i >= 0) FL.sel.splice(i, 1); else if (FL.sel.length >= 6) { toast('6 is the most for one flyer'); return; } else FL.sel.push(d.n);
+    const b = Array.from(document.querySelectorAll('[data-act="flProd"]')).find(x => x.dataset.n === d.n), t = b && b.querySelector('.plt'); if (t) t.textContent = (FL.sel.includes(d.n) ? '☑ ' : '☐ ') + d.n;
+    const c = document.getElementById('flc'); if (c) c.innerHTML = '<b>' + FL.sel.length + '</b> of 6 chosen';
+  };
+  ACT.flMake = async (d, btn) => {
+    FL.head = $v('flh'); FL.sub = $v('fls'); const p = document.getElementById('flp'); FL.prices = !!(p && p.checked);
+    if (!FL.sel.length) { toast('Choose at least one product'); return; }
+    btn.disabled = true;
+    try {
+      FL.cv = await flyerCanvas(); const none = FL.sel.filter(n => !photo(n)).length;
+      sheet('<h2>Check your flyer</h2>' + (none ? '<p class="small amber" style="margin-top:0">' + none + ' product' + (none === 1 ? ' has' : 's have') + ' no picture yet. Add pictures in Setup → Products, then make the flyer again.</p>' : '') +
+        '<img src="' + FL.cv.toDataURL('image/png') + '" alt="" style="width:100%;border:1px solid var(--line);border-radius:12px">' +
+        '<button class="btn primary block" style="margin-top:12px;background:#16A34A;border-color:#16A34A" data-act="flPic">Send / save picture</button>' +
+        '<button class="btn ghost block" style="margin-top:8px" data-act="flOpen">Change the flyer</button>');
+    } catch (e) { toast('Could not make the flyer on this phone'); btn.disabled = false; }
+  };
+  ACT.flPic = (d, b) => { if (FL.cv) share(FL.cv, 'flyer-' + new Date().toISOString().slice(0, 10) + '.png', bizName() + ' flyer', b); };
+  const $v = id => { const e = document.getElementById(id); return e ? String(e.value || '').trim() : ''; };
+
+  /* ---------- ADVERT: one product, a headline, what it is used for, and a caption ---------- */
+  async function advertCanvas() {
+    const c = cfg(), c1 = c.c1 || '#0077B6', W = 1080, pad = 50, story = AD.size === 'story', H = story ? 1920 : 1350, HH = story ? 260 : 220, FH = story ? 170 : 150;
+    const logo = await loadImg(KL.logoSrc()), im = await loadImg(AD.photo || photo(AD.name)), pr = prods().find(p => p.name === AD.name);
+    const head = fit(AD.head || AD.name, W - pad * 2, story ? 3 : 2, story ? 78 : 66, 40, 'bold'), body = AD.body ? fit(AD.body, W - pad * 2, story ? 7 : 4, story ? 40 : 36, 26, '') : null;
+    const showP = AD.prices && pr && pr.price > 0;
+    const headH = head.L.length * Math.round(head.z * 1.15), bodyH = body ? 16 + body.L.length * Math.round(body.z * 1.4) : 0, priceH = showP ? 90 : 0;
+    const imgH = Math.max(300, H - HH - FH - 28 - 30 - headH - bodyH - priceH - 24);
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); watermark(g, W, HH, H - FH, logo); header(g, W, HH, c, c1, logo);
+    let y = HH + 28; contain(g, im, pad, y, W - pad * 2, imgH, 26); y += imgH + 30;
+    g.fillStyle = c1; g.font = F(head.z, 'bold'); g.textAlign = 'center'; head.L.forEach(t => { y += Math.round(head.z * 1.15); g.fillText(t, W / 2, y - 8); });
+    if (body) { y += 16; g.fillStyle = '#334155'; g.font = F(body.z); body.L.forEach(t => { y += Math.round(body.z * 1.4); g.fillText(t, W / 2, y - 10); }); }
+    if (showP) { y += 24; g.fillStyle = '#F1F7FB'; const tw = 420; rr(g, (W - tw) / 2, y, tw, 66, 33); g.fill(); g.fillStyle = '#1F2933'; g.font = F(40, 'bold'); g.fillText(money(pr.price), W / 2, y + 47); }
+    g.textAlign = 'left'; footer(g, W, H - FH, FH, c, c1);
+    return cv;
+  }
+  const capText = () => {
+    if (AD.cap) return AD.cap; const c = cfg(), ph = [c.phone, c.phone2].filter(Boolean).join(' / '), pr = prods().find(p => p.name === AD.name);
+    return [AD.head || AD.name, AD.body ? '\n' + AD.body : '', AD.prices && pr && pr.price > 0 ? '\nPrice: ' + money(pr.price) : '', '\n' + bizName() + (ph ? '\nCall / WhatsApp: ' + ph : '') + (c.location ? '\n' + c.location : '')].filter(Boolean).join('\n');
+  };
+  ACT.adOpen = () => {
+    const L = prods(); if (!L.length) { toast('Add your products first in Setup → Products'); return; }
+    if (!AD.name || !L.some(p => p.name === AD.name)) AD.name = '';
+    const inp = 'width:100%;border:1.5px solid var(--line);border-radius:12px;padding:10px;font:inherit';
+    sheet('<h2>Make an advert</h2><p class="small muted" style="margin-top:0">One product, made into a picture for WhatsApp status or social media. Your logo is on it.</p>' +
+      '<label>Product</label><select id="adp"><option value="">Choose…</option>' + L.map(p => '<option' + (p.name === AD.name ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') + '</select><p id="adh" class="small amber" style="margin:4px 0"></p>' +
+      '<label>Headline</label><input id="adt" value="' + esc(AD.head) + '" placeholder="Example: Smooth walls, the easy way">' +
+      '<label>What it is used for (2 or 3 short lines)</label><textarea id="adb" rows="4" style="' + inp + '" placeholder="Example: Strong plasterboard for ceilings and partitions.">' + esc(AD.body) + '</textarea>' +
+      '<label>Size</label><div class="seg"><button class="' + (AD.size === 'post' ? 'on' : '') + '" data-act="adSz" data-s="post">Post (Facebook, Instagram)</button><button class="' + (AD.size === 'story' ? 'on' : '') + '" data-act="adSz" data-s="story">Status / story (tall)</button></div>' +
+      '<label style="' + box + '"><input id="adpr" type="checkbox" style="width:20px;height:20px;min-height:0"' + (AD.prices ? ' checked' : '') + '> Show the price</label>' +
+      '<label>Use a different picture (optional)</label><input id="adf" type="file" accept="image/*"><p class="small muted" style="margin:2px 0">A bigger, clearer photo gives a sharper advert than the small saved picture.' + (AD.photo ? ' <b>Picture added.</b>' : '') + '</p>' +
+      '<label>Caption for your post (optional)</label><textarea id="adc" rows="4" style="' + inp + '" placeholder="Leave empty and the app builds one from your headline and lines">' + esc(AD.cap) + '</textarea>' +
+      '<br><button class="btn primary block" data-act="adMake">Make the advert</button>');
+    hint();
+  };
+  function hint() { const h = document.getElementById('adh'), s = document.getElementById('adp'); if (h && s) h.textContent = s.value && !photo(s.value) && !AD.photo ? 'This product has no saved picture yet. Add one below or in Setup → Products.' : ''; }
+  document.addEventListener('change', async ev => {
+    const t = ev.target; if (!t || !t.id) return;
+    if (t.id === 'adp') { AD.name = t.value; AD.photo = ''; hint(); }
+    if (t.id === 'adf' && t.files && t.files[0]) { try { AD.photo = await KL.shrinkImage(t.files[0], 900); toast('Picture added'); hint(); } catch (e) { toast('Could not read that picture'); } }
+  });
+  ACT.adSz = d => { AD.size = d.s; document.querySelectorAll('[data-act="adSz"]').forEach(b => b.classList.toggle('on', b.dataset.s === d.s)); };
+  ACT.adMake = async (d, btn) => {
+    AD.name = $v('adp'); AD.head = $v('adt'); AD.body = $v('adb'); AD.cap = $v('adc'); const p = document.getElementById('adpr'); AD.prices = !!(p && p.checked);
+    if (!AD.name) { toast('Choose the product'); return; }
+    btn.disabled = true;
+    try {
+      AD.cv = await advertCanvas();
+      sheet('<h2>Check your advert</h2><img src="' + AD.cv.toDataURL('image/png') + '" alt="" style="width:100%;border:1px solid var(--line);border-radius:12px">' +
+        '<button class="btn primary block" style="margin-top:12px;background:#16A34A;border-color:#16A34A" data-act="adPic">Send / save picture</button>' +
+        '<button class="btn block" style="margin-top:8px" data-act="adCap">Copy the caption</button>' +
+        '<button class="btn ghost block" style="margin-top:8px" data-act="adOpen">Change the advert</button>');
+    } catch (e) { toast('Could not make the advert on this phone'); btn.disabled = false; }
+  };
+  ACT.adPic = (d, b) => { if (AD.cv) share(AD.cv, 'advert-' + String(AD.name).replace(/[^\w]+/g, '-') + '.png', bizName() + ' advert', b); };
+  ACT.adCap = async () => {
+    const t = capText();
+    try { await navigator.clipboard.writeText(t); toast('Caption copied. Paste it with the picture.'); }
+    catch (e) { const a = document.createElement('textarea'); a.value = t; document.body.appendChild(a); a.select(); try { document.execCommand('copy'); toast('Caption copied. Paste it with the picture.'); } catch (e2) { toast('Could not copy'); } a.remove(); }
+  };
+
+  const _render = KL.fn('render');
+  KL.setFn('render', function (k) {
+    _render(k);
+    if (!S.session || S.tab !== 'custs' || document.getElementById('xfl') || !prods().length) return;
+    const html = '<div id="xfl" class="row" style="gap:8px;margin:4px 0 2px"><button class="btn grow" data-act="flOpen">🖼 Make flyer</button><button class="btn grow" data-act="adOpen">📣 Make advert</button></div>', x = document.getElementById('xpl'), m = document.querySelector('main.wrap');
+    if (x) x.insertAdjacentHTML('afterend', html); else if (m) m.insertAdjacentHTML('afterbegin', html);
+  });
 })();
