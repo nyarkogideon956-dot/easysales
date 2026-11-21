@@ -1240,9 +1240,12 @@
   const KL = window.KL; if (!KL) return;
   const { S, ACT, esc, money, toast, sheet, cfg, bizName } = KL;
   const FL = { sel: [], head: '', sub: '', prices: false, cv: null };
-  const AD = { name: '', head: '', body: '', cap: '', prices: false, size: 'post', photo: '', cv: null };
+  const AD = { name: '', head: '', body: '', badge: '', offer: '', cap: '', prices: false, size: 'post', photo: '', cv: null };
   const prods = () => ((S.cache && S.cache.products) || []).slice().sort((a, b) => (a.cat || 'zz').localeCompare(b.cat || 'zz') || a.name.localeCompare(b.name));
   const photo = n => (S.photos && S.photos[n]) || '';
+  const phonesOf = c => { const seen = {}, out = []; [c.phone, c.phone2].forEach(x => { const d = String(x || '').replace(/\D/g, ''); if (d && !seen[d]) { seen[d] = 1; out.push(String(x).trim()); } }); return out.join(' / '); };
+  const place = c => { const t = String(c.location || '').trim(); return t ? t.charAt(0).toUpperCase() + t.slice(1) : ''; };
+  const CTA = 'Order now on WhatsApp';
   const F = (z, w) => (w || '') + ' ' + z + 'px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
   const loadImg = src => new Promise(res => { if (!src) return res(null); const im = new Image(); im.onload = () => res(im.naturalWidth ? im : null); im.onerror = () => res(null); im.src = src; setTimeout(() => res(null), 4000); });
   const mctx = document.createElement('canvas').getContext('2d');
@@ -1261,8 +1264,8 @@
   }
   function rr(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
   // picture shown whole (not cropped) inside a rounded box
-  function contain(g, im, x, y, w, h, r) {
-    g.save(); rr(g, x, y, w, h, r); g.clip(); g.fillStyle = '#F1F5F9'; g.fillRect(x, y, w, h);
+  function contain(g, im, x, y, w, h, r, bg) {
+    g.save(); rr(g, x, y, w, h, r); g.clip(); g.fillStyle = bg || '#F1F5F9'; g.fillRect(x, y, w, h);
     if (im) { const s = Math.min((w - 16) / im.naturalWidth, (h - 16) / im.naturalHeight), dw = im.naturalWidth * s, dh = im.naturalHeight * s; g.drawImage(im, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh); }
     else { g.fillStyle = '#CBD5E1'; g.font = F(26); g.textAlign = 'center'; g.fillText('No picture yet', x + w / 2, y + h / 2); g.textAlign = 'left'; }
     g.restore();
@@ -1274,14 +1277,15 @@
     if (logo) { const s = Math.min((bs - 20) / logo.naturalWidth, (bs - 20) / logo.naturalHeight); g.drawImage(logo, bx + (bs - logo.naturalWidth * s) / 2, 30 + (bs - logo.naturalHeight * s) / 2, logo.naturalWidth * s, logo.naturalHeight * s); }
     const tx = bx + bs + 30, tw = W - tx - 40; g.fillStyle = '#fff';
     const nm = fit(bizName(), tw, 2, 54, 30, 'bold'); g.font = F(nm.z, 'bold'); nm.L.forEach((t, i) => g.fillText(t, tx, 30 + bs / 2 - 16 - (nm.L.length - 1) * nm.z * 0.55 + i * nm.z * 1.1 + nm.z * 0.3));
-    const sub = [c.location, [c.phone, c.phone2].filter(Boolean).join(' / ')].filter(Boolean).join('  ·  ');
+    const sub = [place(c), phonesOf(c)].filter(Boolean).join('  ·  ');
     if (sub) { g.font = F(24); g.globalAlpha = 0.92; g.fillText(wrap(sub, tw, F(24))[0] || '', tx, h - 34); g.globalAlpha = 1; }
   }
   function footer(g, W, y, h, c, c1) {
-    g.fillStyle = c1; g.fillRect(0, y, W, h); g.fillStyle = '#fff'; g.textAlign = 'center';
-    const ph = [c.phone, c.phone2].filter(Boolean).join(' / ');
-    g.font = F(40, 'bold'); g.fillText(ph ? 'Call / WhatsApp: ' + ph : bizName(), W / 2, y + h / 2 - (c.location ? 4 : -12));
-    if (c.location) { g.font = F(26); g.globalAlpha = 0.92; g.fillText(wrap(c.location, W - 100, F(26))[0] || '', W / 2, y + h / 2 + 38); g.globalAlpha = 1; }
+    g.fillStyle = c1; g.fillRect(0, y, W, h); g.textAlign = 'center';
+    const ph = phonesOf(c), pl = place(c), L = [];
+    if (ph) L.push([CTA, 30, 'bold', '#FDE68A', 40]); L.push([ph || bizName(), 40, 'bold', '#fff', 54]); if (pl) L.push([pl, 26, '', '#fff', 36]);
+    const tot = L.reduce((t, r) => t + r[4], 0); let yy = y + (h - tot) / 2;
+    L.forEach(r => { yy += r[4]; g.fillStyle = r[3]; g.font = F(r[1], r[2]); g.fillText(wrap(r[0], W - 100, F(r[1], r[2]))[0] || '', W / 2, yy - 10); });
     g.textAlign = 'left';
   }
   function watermark(g, W, y0, y1, logo) {
@@ -1307,7 +1311,7 @@
     const cw = (W - pad * 2 - gap) / 2, ih = 300, showP = FL.prices, cellH = ih + 24 + 2 * 36 + (showP ? 48 : 0) + 16;
     const head = fit(FL.head || 'What we sell', W - pad * 2, 3, 74, 44, 'bold'), subL = FL.sub ? fit(FL.sub, W - pad * 2, 2, 34, 24, '') : null;
     const headH = 44 + head.L.length * Math.round(head.z * 1.15) + (subL ? 14 + subL.L.length * Math.round(subL.z * 1.3) : 0) + 34;
-    const rows = Math.ceil(P.length / 2), HH = 250, FH = 150, H = HH + headH + rows * (cellH + gap) + FH - (rows ? 0 : 0);
+    const rows = Math.ceil(P.length / 2), HH = 250, FH = 175, H = HH + headH + rows * (cellH + gap) + FH - (rows ? 0 : 0);
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
     g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); watermark(g, W, HH, H - FH, logo); header(g, W, HH, c, c1, logo);
     let y = HH + 44; g.fillStyle = c1; g.font = F(head.z, 'bold'); g.textAlign = 'center';
@@ -1317,7 +1321,7 @@
     P.forEach((p, i) => {
       const r = Math.floor(i / 2), col = i % 2, last = r === rows - 1 && P.length % 2 === 1, x = last ? (W - cw) / 2 : pad + col * (cw + gap), cy = y + r * (cellH + gap);
       g.fillStyle = '#fff'; rr(g, x, cy, cw, cellH, 22); g.fill(); g.strokeStyle = '#E2E8F0'; g.lineWidth = 2; g.stroke();
-      contain(g, imgs[i], x + 12, cy + 12, cw - 24, ih, 14);
+      contain(g, imgs[i], x + 12, cy + 12, cw - 24, ih, 14, '#FFFFFF');
       const nl = wrap(p.name, cw - 28, F(28, 'bold')).slice(0, 2); g.fillStyle = '#1F2933'; g.font = F(28, 'bold'); g.textAlign = 'center';
       nl.forEach((t, k) => g.fillText(t, x + cw / 2, cy + ih + 24 + 30 + k * 34));
       if (showP && p.price > 0) { g.fillStyle = c1; g.font = F(34, 'bold'); g.fillText(money(p.price), x + cw / 2, cy + ih + 24 + 2 * 34 + 40); }
@@ -1360,24 +1364,33 @@
 
   /* ---------- ADVERT: one product, a headline, what it is used for, and a caption ---------- */
   async function advertCanvas() {
-    const c = cfg(), c1 = c.c1 || '#0077B6', W = 1080, pad = 50, story = AD.size === 'story', H = story ? 1920 : 1350, HH = story ? 260 : 220, FH = story ? 170 : 150;
+    const c = cfg(), c1 = c.c1 || '#0077B6', W = 1080, pad = 50, story = AD.size === 'story', H = story ? 1920 : 1350, HH = story ? 260 : 220, FH = story ? 195 : 175;
     const logo = await loadImg(KL.logoSrc()), im = await loadImg(AD.photo || photo(AD.name)), pr = prods().find(p => p.name === AD.name);
     const head = fit(AD.head || AD.name, W - pad * 2, story ? 3 : 2, story ? 78 : 66, 40, 'bold'), body = AD.body ? fit(AD.body, W - pad * 2, story ? 7 : 4, story ? 40 : 36, 26, '') : null;
-    const showP = AD.prices && pr && pr.price > 0;
-    const headH = head.L.length * Math.round(head.z * 1.15), bodyH = body ? 16 + body.L.length * Math.round(body.z * 1.4) : 0, priceH = showP ? 90 : 0;
-    const imgH = Math.max(300, H - HH - FH - 28 - 30 - headH - bodyH - priceH - 24);
+    const offer = AD.offer ? fit(AD.offer, W - pad * 2 - 60, 2, 38, 26, 'bold') : null, showP = AD.prices && pr && pr.price > 0;
+    const headH = head.L.length * Math.round(head.z * 1.15), bodyH = body ? 16 + body.L.length * Math.round(body.z * 1.4) : 0;
+    const offerH = offer ? 22 + offer.L.length * Math.round(offer.z * 1.3) + 28 + 12 : 0, priceH = showP ? 90 : 0;
+    const avail = Math.max(300, H - HH - FH - 28 - 30 - headH - bodyH - offerH - priceH - 24), bw = W - pad * 2;
+    let pw = bw, ph = avail;
+    if (im) { const k = Math.min(bw / im.naturalWidth, avail / im.naturalHeight); pw = im.naturalWidth * k; ph = im.naturalHeight * k; }   // the photo box takes the shape of the photo
+    const gapY = (avail - ph) / 2, px = (W - pw) / 2;
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
     g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); watermark(g, W, HH, H - FH, logo); header(g, W, HH, c, c1, logo);
-    let y = HH + 28; contain(g, im, pad, y, W - pad * 2, imgH, 26); y += imgH + 30;
+    let y = HH + 28 + gapY;
+    if (im) { g.save(); rr(g, px, y, pw, ph, 26); g.clip(); g.drawImage(im, px, y, pw, ph); g.restore(); g.strokeStyle = '#E2E8F0'; g.lineWidth = 2; rr(g, px, y, pw, ph, 26); g.stroke(); }
+    else contain(g, null, pad, y, bw, ph, 26);
+    if (AD.badge) { g.font = F(36, 'bold'); const bt = AD.badge.slice(0, 28), bwid = g.measureText(bt).width + 48, bx = (im ? px : pad) + 20, by = y + 20; g.fillStyle = c1; rr(g, bx, by, bwid, 68, 34); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 3; g.stroke(); g.fillStyle = '#fff'; g.fillText(bt, bx + 24, by + 47); }
+    y = HH + 28 + avail + 30;
     g.fillStyle = c1; g.font = F(head.z, 'bold'); g.textAlign = 'center'; head.L.forEach(t => { y += Math.round(head.z * 1.15); g.fillText(t, W / 2, y - 8); });
     if (body) { y += 16; g.fillStyle = '#334155'; g.font = F(body.z); body.L.forEach(t => { y += Math.round(body.z * 1.4); g.fillText(t, W / 2, y - 10); }); }
-    if (showP) { y += 24; g.fillStyle = '#F1F7FB'; const tw = 420; rr(g, (W - tw) / 2, y, tw, 66, 33); g.fill(); g.fillStyle = '#1F2933'; g.font = F(40, 'bold'); g.fillText(money(pr.price), W / 2, y + 47); }
+    if (offer) { y += 22; const lh = Math.round(offer.z * 1.3), oh = offer.L.length * lh + 28; g.fillStyle = '#FEF3C7'; rr(g, pad, y, W - pad * 2, oh, 18); g.fill(); g.fillStyle = '#92400E'; g.font = F(offer.z, 'bold'); offer.L.forEach((t, i) => g.fillText(t, W / 2, y + 14 + (i + 1) * lh - 10)); y += oh + 12; }
+    if (showP) { y += 24; const tw = 440; g.fillStyle = c1; rr(g, (W - tw) / 2, y, tw, 66, 33); g.fill(); g.fillStyle = '#fff'; g.font = F(40, 'bold'); g.fillText(money(pr.price), W / 2, y + 47); }
     g.textAlign = 'left'; footer(g, W, H - FH, FH, c, c1);
     return cv;
   }
   const capText = () => {
-    if (AD.cap) return AD.cap; const c = cfg(), ph = [c.phone, c.phone2].filter(Boolean).join(' / '), pr = prods().find(p => p.name === AD.name);
-    return [AD.head || AD.name, AD.body ? '\n' + AD.body : '', AD.prices && pr && pr.price > 0 ? '\nPrice: ' + money(pr.price) : '', '\n' + bizName() + (ph ? '\nCall / WhatsApp: ' + ph : '') + (c.location ? '\n' + c.location : '')].filter(Boolean).join('\n');
+    if (AD.cap) return AD.cap; const c = cfg(), ph = phonesOf(c), pr = prods().find(p => p.name === AD.name);
+    return [AD.head || AD.name, AD.body ? '\n' + AD.body : '', AD.offer ? '\n' + AD.offer : '', AD.prices && pr && pr.price > 0 ? '\nPrice: ' + money(pr.price) : '', '\n' + bizName() + (ph ? '\nCall / WhatsApp: ' + ph : '') + (place(c) ? '\n' + place(c) : '')].filter(Boolean).join('\n');
   };
   ACT.adOpen = () => {
     const L = prods(); if (!L.length) { toast('Add your products first in Setup → Products'); return; }
@@ -1386,6 +1399,8 @@
     sheet('<h2>Make an advert</h2><p class="small muted" style="margin-top:0">One product, made into a picture for WhatsApp status or social media. Your logo is on it.</p>' +
       '<label>Product</label><select id="adp"><option value="">Choose…</option>' + L.map(p => '<option' + (p.name === AD.name ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') + '</select><p id="adh" class="small amber" style="margin:4px 0"></p>' +
       '<label>Headline</label><input id="adt" value="' + esc(AD.head) + '" placeholder="Example: Smooth walls, the easy way">' +
+      '<label>Corner badge (optional)</label><input id="adg" value="' + esc(AD.badge) + '" placeholder="Example: In stock">' +
+      '<label>Offer line (optional)</label><input id="ado" value="' + esc(AD.offer) + '" placeholder="Example: Free delivery within Kasoa">' +
       '<label>What it is used for (2 or 3 short lines)</label><textarea id="adb" rows="4" style="' + inp + '" placeholder="Example: Strong plasterboard for ceilings and partitions.">' + esc(AD.body) + '</textarea>' +
       '<label>Size</label><div class="seg"><button class="' + (AD.size === 'post' ? 'on' : '') + '" data-act="adSz" data-s="post">Post (Facebook, Instagram)</button><button class="' + (AD.size === 'story' ? 'on' : '') + '" data-act="adSz" data-s="story">Status / story (tall)</button></div>' +
       '<label style="' + box + '"><input id="adpr" type="checkbox" style="width:20px;height:20px;min-height:0"' + (AD.prices ? ' checked' : '') + '> Show the price</label>' +
@@ -1402,7 +1417,7 @@
   });
   ACT.adSz = d => { AD.size = d.s; document.querySelectorAll('[data-act="adSz"]').forEach(b => b.classList.toggle('on', b.dataset.s === d.s)); };
   ACT.adMake = async (d, btn) => {
-    AD.name = $v('adp'); AD.head = $v('adt'); AD.body = $v('adb'); AD.cap = $v('adc'); const p = document.getElementById('adpr'); AD.prices = !!(p && p.checked);
+    AD.name = $v('adp'); AD.head = $v('adt'); AD.body = $v('adb'); AD.badge = $v('adg'); AD.offer = $v('ado'); AD.cap = $v('adc'); const p = document.getElementById('adpr'); AD.prices = !!(p && p.checked);
     if (!AD.name) { toast('Choose the product'); return; }
     btn.disabled = true;
     try {
