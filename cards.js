@@ -1239,8 +1239,8 @@
   'use strict';
   const KL = window.KL; if (!KL) return;
   const { S, ACT, esc, money, toast, sheet, cfg, bizName } = KL;
-  const FL = { sel: [], head: '', sub: '', prices: false, cv: null };
-  const AD = { name: '', head: '', body: '', badge: '', offer: '', cap: '', prices: false, size: 'post', photo: '', cv: null };
+  const FL = { sel: [], head: '', sub: '', svc: 'Supply, Installation, Delivery', also: '', cta: '', prices: false, cv: null };
+  const AD = { name: '', head: '', body: '', badge: '', offer: '', cta: '', cap: '', prices: false, size: 'post', photo: '', cv: null };
   const prods = () => ((S.cache && S.cache.products) || []).slice().sort((a, b) => (a.cat || 'zz').localeCompare(b.cat || 'zz') || a.name.localeCompare(b.name));
   const photo = n => (S.photos && S.photos[n]) || '';
   const phonesOf = c => { const seen = {}, out = []; [c.phone, c.phone2].forEach(x => { const d = String(x || '').replace(/\D/g, ''); if (d && !seen[d]) { seen[d] = 1; out.push(String(x).trim()); } }); return out.join(' / '); };
@@ -1280,10 +1280,10 @@
     const sub = [place(c), phonesOf(c)].filter(Boolean).join('  ·  ');
     if (sub) { g.font = F(24); g.globalAlpha = 0.92; g.fillText(wrap(sub, tw, F(24))[0] || '', tx, h - 34); g.globalAlpha = 1; }
   }
-  function footer(g, W, y, h, c, c1) {
+  function footer(g, W, y, h, c, c1, cta) {
     g.fillStyle = c1; g.fillRect(0, y, W, h); g.textAlign = 'center';
     const ph = phonesOf(c), pl = place(c), L = [];
-    if (ph) L.push([CTA, 30, 'bold', '#FDE68A', 40]); L.push([ph || bizName(), 40, 'bold', '#fff', 54]); if (pl) L.push([pl, 26, '', '#fff', 36]);
+    if (ph) L.push([cta || CTA, 30, 'bold', '#FDE68A', 40]); L.push([ph || bizName(), 40, 'bold', '#fff', 54]); if (pl) L.push([pl, 26, '', '#fff', 36]);
     const tot = L.reduce((t, r) => t + r[4], 0); let yy = y + (h - tot) / 2;
     L.forEach(r => { yy += r[4]; g.fillStyle = r[3]; g.font = F(r[1], r[2]); g.fillText(wrap(r[0], W - 100, F(r[1], r[2]))[0] || '', W / 2, yy - 10); });
     g.textAlign = 'left';
@@ -1304,19 +1304,33 @@
   const tick = 'display:flex;width:100%;justify-content:space-between;gap:8px;align-items:center;padding:8px 0;border:0;border-bottom:1px solid var(--line);background:none;text-align:left;font:inherit;font-size:13px;color:inherit';
   const box = 'display:flex;gap:8px;align-items:center;font-weight:600;color:var(--ink);margin-top:10px';
 
+  // rows of small rounded tags (for the Services and Also available strips)
+  function tagRows(text, z, w, padX, gx) {
+    const items = String(text || '').split(/[,\n·|]+/).map(t => t.trim()).filter(Boolean).slice(0, 14); if (!items.length) return [];
+    mctx.font = F(z, 'bold'); const rows = []; let row = [], used = 0;
+    items.forEach(t => { const tw = mctx.measureText(t).width + padX * 2; if (row.length && used + gx + tw > w) { rows.push(row); row = []; used = 0; } row.push({ t, tw }); used += (row.length > 1 ? gx : 0) + tw; });
+    rows.push(row); return rows;
+  }
+  function drawTags(g, rows, cx, y, z, rowH, gx, fill, color) {
+    g.font = F(z, 'bold'); g.textAlign = 'center';
+    rows.forEach((row, ri) => { const tot = row.reduce((t, r) => t + r.tw, 0) + gx * (row.length - 1); let x = cx - tot / 2; row.forEach(r => { g.fillStyle = fill; rr(g, x, y + ri * rowH, r.tw, rowH - 12, (rowH - 12) / 2); g.fill(); g.fillStyle = color; g.fillText(r.t, x + r.tw / 2, y + ri * rowH + (rowH - 12) / 2 + z * 0.35); x += r.tw + gx; }); });
+    g.textAlign = 'left';
+  }
   /* ---------- FLYER: up to 6 products, no prices unless ticked ---------- */
   async function flyerCanvas() {
     const c = cfg(), c1 = c.c1 || '#0077B6', W = 1080, pad = 50, gap = 36, logo = await loadImg(KL.logoSrc());
     const P = FL.sel.map(n => prods().find(p => p.name === n)).filter(Boolean), imgs = await Promise.all(P.map(p => loadImg(photo(p.name))));
     const cw = (W - pad * 2 - gap) / 2, ih = 300, showP = FL.prices, cellH = ih + 24 + 2 * 36 + (showP ? 48 : 0) + 16;
     const head = fit(FL.head || 'What we sell', W - pad * 2, 3, 74, 44, 'bold'), subL = FL.sub ? fit(FL.sub, W - pad * 2, 2, 34, 24, '') : null;
-    const headH = 44 + head.L.length * Math.round(head.z * 1.15) + (subL ? 14 + subL.L.length * Math.round(subL.z * 1.3) : 0) + 34;
-    const rows = Math.ceil(P.length / 2), HH = 250, FH = 175, H = HH + headH + rows * (cellH + gap) + FH - (rows ? 0 : 0);
+    const svc = tagRows(FL.svc, 28, W - pad * 2, 26, 14), also = tagRows(FL.also, 24, W - pad * 2, 18, 10);
+    const headH = 44 + head.L.length * Math.round(head.z * 1.15) + (subL ? 14 + subL.L.length * Math.round(subL.z * 1.3) : 0) + (svc.length ? 20 + svc.length * 64 : 0) + 34, alsoH = also.length ? 46 + also.length * 50 + 20 : 0;
+    const rows = Math.ceil(P.length / 2), HH = 250, FH = 175, H = HH + headH + rows * (cellH + gap) + alsoH + FH - (rows ? 0 : 0);
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
     g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); watermark(g, W, HH, H - FH, logo); header(g, W, HH, c, c1, logo);
     let y = HH + 44; g.fillStyle = c1; g.font = F(head.z, 'bold'); g.textAlign = 'center';
     head.L.forEach(t => { y += Math.round(head.z * 1.15); g.fillText(t, W / 2, y - 8); });
     if (subL) { y += 14; g.fillStyle = '#334155'; g.font = F(subL.z); subL.L.forEach(t => { y += Math.round(subL.z * 1.3); g.fillText(t, W / 2, y - 8); }); }
+    if (svc.length) drawTags(g, svc, W / 2, y + 20, 28, 64, 14, c1, '#fff');
     g.textAlign = 'left'; y = HH + headH;
     P.forEach((p, i) => {
       const r = Math.floor(i / 2), col = i % 2, last = r === rows - 1 && P.length % 2 === 1, x = last ? (W - cw) / 2 : pad + col * (cw + gap), cy = y + r * (cellH + gap);
@@ -1327,7 +1341,8 @@
       if (showP && p.price > 0) { g.fillStyle = c1; g.font = F(34, 'bold'); g.fillText(money(p.price), x + cw / 2, cy + ih + 24 + 2 * 34 + 40); }
       g.textAlign = 'left';
     });
-    footer(g, W, H - FH, FH, c, c1);
+    if (also.length) { const ay = HH + headH + rows * (cellH + gap); g.fillStyle = '#5B6B78'; g.font = F(24, 'bold'); g.textAlign = 'center'; g.fillText('ALSO AVAILABLE', W / 2, ay + 24); g.textAlign = 'left'; drawTags(g, also, W / 2, ay + 40, 24, 50, 10, '#EEF2F7', '#334155'); }
+    footer(g, W, H - FH, FH, c, c1, FL.cta);
     return cv;
   }
   ACT.flOpen = () => {
@@ -1336,6 +1351,9 @@
     sheet('<h2>Make a flyer</h2><p class="small muted" style="margin-top:0">A flyer for up to 6 products, to send on WhatsApp or post on social media. Product pictures come from Setup → Products.</p>' +
       '<label>Headline</label><input id="flh" value="' + esc(FL.head) + '" placeholder="Example: Plasterboard and ceiling accessories">' +
       '<label>Line under it (optional)</label><input id="fls" value="' + esc(FL.sub) + '" placeholder="Example: Supply and fixing available">' +
+      '<label>Services (separate with commas)</label><input id="flv" value="' + esc(FL.svc) + '" placeholder="Supply, Installation, Delivery">' +
+      '<label>Also available (separate with commas)</label><input id="fla" value="' + esc(FL.also) + '" placeholder="Example: Ceiling boards, Gypsum, Paint, Lights">' +
+      '<label>Bottom line (optional)</label><input id="flb" value="' + esc(FL.cta) + '" placeholder="Order now on WhatsApp">' +
       '<label style="' + box + '"><input id="flp" type="checkbox" style="width:20px;height:20px;min-height:0"' + (FL.prices ? ' checked' : '') + '> Show prices on the flyer</label>' +
       '<label>Choose up to 6 products</label><div id="flc" class="small" style="margin:0 0 4px"><b>' + FL.sel.length + '</b> of 6 chosen</div>' +
       '<div class="card" style="padding:4px 14px;max-height:280px;overflow:auto">' + L.map(p => '<button data-act="flProd" data-n="' + esc(p.name) + '" style="' + tick + '"><span class="plt">' + (FL.sel.includes(p.name) ? '☑ ' : '☐ ') + esc(p.name) + '</span><span class="small muted">' + esc(p.cat || '') + (photo(p.name) ? ' 📷' : '') + '</span></button>').join('') + '</div>' +
@@ -1348,7 +1366,7 @@
     const c = document.getElementById('flc'); if (c) c.innerHTML = '<b>' + FL.sel.length + '</b> of 6 chosen';
   };
   ACT.flMake = async (d, btn) => {
-    FL.head = $v('flh'); FL.sub = $v('fls'); const p = document.getElementById('flp'); FL.prices = !!(p && p.checked);
+    FL.head = $v('flh'); FL.sub = $v('fls'); FL.svc = $v('flv'); FL.also = $v('fla'); FL.cta = $v('flb'); const p = document.getElementById('flp'); FL.prices = !!(p && p.checked);
     if (!FL.sel.length) { toast('Choose at least one product'); return; }
     btn.disabled = true;
     try {
@@ -1385,7 +1403,7 @@
     if (body) { y += 16; g.fillStyle = '#334155'; g.font = F(body.z); body.L.forEach(t => { y += Math.round(body.z * 1.4); g.fillText(t, W / 2, y - 10); }); }
     if (offer) { y += 22; const lh = Math.round(offer.z * 1.3), oh = offer.L.length * lh + 28; g.fillStyle = '#FEF3C7'; rr(g, pad, y, W - pad * 2, oh, 18); g.fill(); g.fillStyle = '#92400E'; g.font = F(offer.z, 'bold'); offer.L.forEach((t, i) => g.fillText(t, W / 2, y + 14 + (i + 1) * lh - 10)); y += oh + 12; }
     if (showP) { y += 24; const tw = 440; g.fillStyle = c1; rr(g, (W - tw) / 2, y, tw, 66, 33); g.fill(); g.fillStyle = '#fff'; g.font = F(40, 'bold'); g.fillText(money(pr.price), W / 2, y + 47); }
-    g.textAlign = 'left'; footer(g, W, H - FH, FH, c, c1);
+    g.textAlign = 'left'; footer(g, W, H - FH, FH, c, c1, AD.cta);
     return cv;
   }
   const capText = () => {
@@ -1399,12 +1417,13 @@
     sheet('<h2>Make an advert</h2><p class="small muted" style="margin-top:0">One product, made into a picture for WhatsApp status or social media. Your logo is on it.</p>' +
       '<label>Product</label><select id="adp"><option value="">Choose…</option>' + L.map(p => '<option' + (p.name === AD.name ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') + '</select><p id="adh" class="small amber" style="margin:4px 0"></p>' +
       '<label>Headline</label><input id="adt" value="' + esc(AD.head) + '" placeholder="Example: Smooth walls, the easy way">' +
-      '<label>Corner badge (optional)</label><input id="adg" value="' + esc(AD.badge) + '" placeholder="Example: In stock">' +
-      '<label>Offer line (optional)</label><input id="ado" value="' + esc(AD.offer) + '" placeholder="Example: Free delivery within Kasoa">' +
+      '<label>Corner badge (optional)</label><input id="adg" value="' + esc(AD.badge) + '" placeholder="Example: We deliver, or We install">' +
+      '<label>Offer line (optional)</label><input id="ado" value="' + esc(AD.offer) + '" placeholder="Example: Delivery service available · We deliver wherever you are">' +
       '<label>What it is used for (2 or 3 short lines)</label><textarea id="adb" rows="4" style="' + inp + '" placeholder="Example: Strong plasterboard for ceilings and partitions.">' + esc(AD.body) + '</textarea>' +
       '<label>Size</label><div class="seg"><button class="' + (AD.size === 'post' ? 'on' : '') + '" data-act="adSz" data-s="post">Post (Facebook, Instagram)</button><button class="' + (AD.size === 'story' ? 'on' : '') + '" data-act="adSz" data-s="story">Status / story (tall)</button></div>' +
       '<label style="' + box + '"><input id="adpr" type="checkbox" style="width:20px;height:20px;min-height:0"' + (AD.prices ? ' checked' : '') + '> Show the price</label>' +
       '<label>Use a different picture (optional)</label><input id="adf" type="file" accept="image/*"><p class="small muted" style="margin:2px 0">A bigger, clearer photo gives a sharper advert than the small saved picture.' + (AD.photo ? ' <b>Picture added.</b>' : '') + '</p>' +
+      '<label>Bottom line (optional)</label><input id="adq" value="' + esc(AD.cta) + '" placeholder="Order now on WhatsApp">' +
       '<label>Caption for your post (optional)</label><textarea id="adc" rows="4" style="' + inp + '" placeholder="Leave empty and the app builds one from your headline and lines">' + esc(AD.cap) + '</textarea>' +
       '<br><button class="btn primary block" data-act="adMake">Make the advert</button>');
     hint();
@@ -1417,7 +1436,7 @@
   });
   ACT.adSz = d => { AD.size = d.s; document.querySelectorAll('[data-act="adSz"]').forEach(b => b.classList.toggle('on', b.dataset.s === d.s)); };
   ACT.adMake = async (d, btn) => {
-    AD.name = $v('adp'); AD.head = $v('adt'); AD.body = $v('adb'); AD.badge = $v('adg'); AD.offer = $v('ado'); AD.cap = $v('adc'); const p = document.getElementById('adpr'); AD.prices = !!(p && p.checked);
+    AD.name = $v('adp'); AD.head = $v('adt'); AD.body = $v('adb'); AD.badge = $v('adg'); AD.offer = $v('ado'); AD.cta = $v('adq'); AD.cap = $v('adc'); const p = document.getElementById('adpr'); AD.prices = !!(p && p.checked);
     if (!AD.name) { toast('Choose the product'); return; }
     btn.disabled = true;
     try {

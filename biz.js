@@ -10,7 +10,8 @@
   Object.assign(KL.ERR, { already_exists: 'That name is already on your list.', demo_ended: 'This demo has ended. Call ' + PHONE + ' to keep using EasySales.', licence_ended: 'Your EasySales subscription has ended. Your records are safe. Call ' + PHONE + ' to renew.', section_off: 'This section is not switched on for you.', vendor_only: 'Only EasySales can do that.', job_exists: 'A job was already started from this document.', bad_date: 'Check the date and time.' });
 
   KL.hasMod = m => !S.session || !S.session.mods || S.session.mods.indexOf(m) >= 0;
-  KL.homeHas = c => !S.session || !S.session.home || S.session.home.indexOf(c) >= 0;
+  // the sales cards on Home never show when the Sell section is off
+  KL.homeHas = c => !S.session || (['today', 'week', 'reports', 'att'].indexOf(c) >= 0 && !KL.hasMod('sell') ? false : (!S.session.home || S.session.home.indexOf(c) >= 0));
   const isOwner = () => S.session && S.session.role === 'admin';
 
   /* ---------- keep the session's sections up to date, and lock when time is up ---------- */
@@ -957,14 +958,23 @@
     const def = end.getFullYear() + '-' + String(end.getMonth() + 1).padStart(2, '0') + '-' + String(end.getDate()).padStart(2, '0') + 'T18:00';
     B.dm = x || null;
     sheet('<h2>' + (x ? 'Demo: ' + esc(x.name) : 'New demo') + '</h2><label>Name / business</label><input id="dmn" value="' + esc(x ? x.name : '') + '" placeholder="Example: Kofi Tapes, Kasoa"><label>WhatsApp number</label><input id="dmp" inputmode="tel" value="' + esc(x ? x.phone : '') + '">' +
-      '<label>What they can see</label>' + ticks(x ? x.mods : ['sell', 'docs', 'cash'], 'dm') +
+      '<label>What they can see</label><button class="btn sm" data-act="dmEst" style="margin:2px 0 6px">Estimates + labour (one tap)</button>' + ticks(x ? x.mods : ['sell', 'docs', 'cash'], 'dm') +
       '<label>Their Home screen shows</label>' + homeTicks(x ? x.home : ['today', 'qa', 'week', 'att'], 'dh') +
-      '<label>Demo ends</label><input id="dme" type="datetime-local" value="' + esc(x ? toLocal(x.ends) : def) + '"><label>Note</label><input id="dmt" value="' + esc(x ? x.note : '') + '">' +
+      '<label>Demo ends (at the end of this day)</label><input id="dme" type="date" value="' + esc(x ? String(x.ends || '').slice(0, 10) : def.slice(0, 10)) + '"><div class="row" style="gap:6px;margin:6px 0"><button class="btn sm grow" data-act="dmEnd" data-d="7">+1 week</button><button class="btn sm grow" data-act="dmEnd" data-d="30">+1 month</button><button class="btn sm grow" data-act="dmEnd" data-d="90">+3 months</button></div><p id="dmed" class="small muted" style="margin:0 0 6px"></p><label>Note</label><input id="dmt" value="' + esc(x ? x.note : '') + '">' +
       (x ? '<label style="display:flex;gap:8px;align-items:center;font-weight:600;color:var(--ink)"><input id="dma" type="checkbox" style="width:auto;min-height:0"' + (x.active ? ' checked' : '') + '> Switched on</label>' : '') +
       '<br><button class="btn primary block" data-act="dmSave">' + (x ? 'Save' : 'Create demo') + '</button>' + (x ? '<button class="btn violet block" style="margin-top:8px" data-act="dmShare" data-k="' + esc(x.key) + '">Send link on WhatsApp</button><button class="btn danger block" style="margin-top:8px" data-act="dmDel" data-k="' + esc(x.key) + '">Delete demo and its copy</button>' : '') +
       (x ? '' : '<p class="small muted">Creating a demo makes a copy of this shop. It takes a few seconds.</p>'));
+    setTimeout(showEnd, 0);
   }
+  const showEnd = () => { const v = $('#dme') && $('#dme').value, p = document.getElementById('dmed'); if (p) p.textContent = v ? 'Ends on ' + new Date(v + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + ', at the end of the day.' : 'Choose the end date.'; };
+  document.addEventListener('change', ev => { if (ev.target && ev.target.id === 'dme') showEnd(); });
+  ACT.dmEnd = d => { const e = new Date(Date.now() + (+d.d) * 864e5); $('#dme').value = e.getFullYear() + '-' + String(e.getMonth() + 1).padStart(2, '0') + '-' + String(e.getDate()).padStart(2, '0'); showEnd(); };
   ACT.dmNew = () => demoSheet(null);
+  ACT.dmEst = () => {
+    document.querySelectorAll('[data-dm]').forEach(e => { e.checked = ['docs', 'est', 'build'].indexOf(e.dataset.dm) >= 0; });
+    document.querySelectorAll('[data-dh]').forEach(e => { e.checked = e.dataset.dh === 'qa'; });
+    toast('Ticked: Estimates, Estimator and Construction extras (labour, transport). Tap Save.');
+  };
   ACT.dmOpen = d => demoSheet(B.lic.demos.find(x => x.key === d.k));
   ACT.dmSave = async (d, btn) => {
     const name = $('#dmn').value.trim(); if (!name) { toast('Enter the name'); return; }

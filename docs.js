@@ -241,7 +241,7 @@
         (wb ? '' : '<div class="grow"><label style="margin:0">Price</label><input data-di="u" data-n="' + n + '" type="number" inputmode="decimal" value="' + esc(i.u) + '"></div>') +
         '<button class="btn sm danger" data-act="dDelLine" data-n="' + n + '" style="align-self:flex-end" aria-label="Remove line">✕</button></div>' +
         (wb || !build() ? '' : '<label style="margin:6px 0 0;display:flex;align-items:center;gap:8px;font-weight:600"><input data-di="l" data-n="' + n + '" type="checkbox" style="width:auto;min-height:0"' + (i.l ? ' checked' : '') + '> Labour / workmanship</label>') + '</div>').join('') : '<p class="small muted">No items yet.</p>') +
-      '<div class="row" style="gap:8px"><button class="btn sm grow" data-act="dAddLine">+ Add item</button>' + (wb || (KL.hasMod && !KL.hasMod('est')) ? '' : '<button class="btn sm violet grow" data-act="dEstimator">Estimator</button>') + '</div>' +
+      '<div class="row" style="gap:8px"><button class="btn sm grow" data-act="dAddLine">+ Add item</button>' + (wb || !build() ? '' : '<button class="btn sm grow" data-act="dLabour" style="background:#ECFDF5;border-color:#6EE7B7;color:#065F46">+ Labour</button>') + (wb || (KL.hasMod && !KL.hasMod('est')) ? '' : '<button class="btn sm violet grow" data-act="dEstimator">Estimator</button>') + '</div>' +
       (wb ? '<div class="picker"><div><label>Vehicle number</label><input id="dv" value="' + esc(e.vehicle) + '" placeholder="GT 4512-22"></div><div><label>Driver (name, phone)</label><input id="dd" value="' + esc(e.driver) + '"></div></div>' :
         '<div class="card" style="padding:12px;margin-top:10px"><b>' + (build() ? 'Transport, discount' : 'Discount') + (useTax() ? ' and tax' : '') + '</b>' +
         '<div class="picker">' + (build() ? '<div><label>Transport (GH₵)</label><input id="dtr" type="number" inputmode="decimal" value="' + esc(e.trans) + '" placeholder="0"></div>' : '') +
@@ -289,6 +289,31 @@
     else i[t.dataset.di] = t.value === '' ? '' : +t.value;
     live();
   });
+  /* ---------- labour picker: tick the work you are charging for, with its area and rate ---------- */
+  const LABJ = [['lab_struct', 'Structure works', 'm²'], ['lab_skim', 'Plasterboard skimming', 'm²'], ['lab_gen', 'General labour', 'm²'], ['lab_ac', 'Acoustic ceiling fixing', 'm²'], ['lab_pop', 'POP ceiling', 'm²'], ['lab_popc', 'POP cornice fixing', 'm'], ['lab_cornice', 'Cornice fixing (piece)', 'pcs'], ['lab_pt', 'Partition works', 'm²'], ['lab_paint', 'Painting', 'm²']];
+  ACT.dLabour = async () => {
+    readEdit();
+    const R = (await getRules()) || {}, have = {}; D.edit.items.forEach(i => { if (i.l) have[kk(i.p)] = i; });
+    D.lp = LABJ.map(x => { const nm = String(R[x[0] + '_item'] || x[1]), rate = +R[x[0] + '_rate'] || 0, h = have[kk(nm)]; return { p: nm, un: x[2], q: h ? h.q : '', u: h ? h.u : (rate || ''), on: !!h }; });
+    labourSheet();
+  };
+  function labourSheet() {
+    sheet('<h2>Labour / workmanship</h2><p class="small muted" style="margin-top:0">Tick the work you are charging for, then type the area and the rate. Work you leave unticked is not on the estimate.</p>' +
+      D.lp.map((x, n) => '<div class="card" style="padding:10px;margin:6px 0"><label style="margin:0;display:flex;align-items:center;gap:8px;font-weight:600"><input data-lp="on" data-n="' + n + '" type="checkbox" style="width:auto;min-height:0"' + (x.on ? ' checked' : '') + '> ' + esc(x.p) + '</label>' +
+        '<div class="row" style="margin-top:6px;gap:8px"><div class="grow"><label style="margin:0">Area / qty (' + esc(x.un) + ')</label><input data-lp="q" data-n="' + n + '" type="number" inputmode="decimal" value="' + esc(x.q) + '" placeholder="0"></div>' +
+        '<div class="grow"><label style="margin:0">Rate (GH₵)</label><input data-lp="u" data-n="' + n + '" type="number" inputmode="decimal" value="' + esc(x.u) + '" placeholder="0"></div></div></div>').join('') +
+      '<button class="btn primary block" data-act="dLabourAdd" style="margin-top:8px">Put ticked labour on the estimate</button><button class="btn ghost block" data-act="dLabourBack" style="margin-top:8px">Back</button>');
+  }
+  function readLabour() { document.querySelectorAll('[data-lp]').forEach(el => { const x = D.lp && D.lp[+el.dataset.n]; if (!x) return; const k = el.dataset.lp; if (k === 'on') x.on = el.checked; else x[k] = el.value === '' ? '' : +el.value; }); }
+  ACT.dLabourAdd = () => {
+    readLabour(); const pick = D.lp.filter(x => x.on);
+    const bad = pick.find(x => !(x.q > 0) || !(x.u > 0)); if (bad) { toast('Type the area and the rate for ' + bad.p); return; }
+    const names = D.lp.map(x => kk(x.p));
+    D.edit.items = D.edit.items.filter(i => !(i.l && names.indexOf(kk(i.p)) >= 0));   // a ticked line replaces the old one; an unticked one is taken off
+    pick.forEach(x => D.edit.items.push({ p: x.p, q: x.q, u: x.u, un: x.un, l: 1 }));
+    editSheet();
+  };
+  ACT.dLabourBack = () => { readLabour(); editSheet(); };
   ACT.dAddLine = () => { readEdit(); D.edit.items.push({ p: '', q: 1, u: 0 }); editSheet(); };
   ACT.dDelLine = d => { readEdit(); D.edit.items.splice(+d.n, 1); editSheet(); };
 
