@@ -750,13 +750,13 @@ async function shareReceipt(b) {
   } catch (e) { if (e && e.name !== 'AbortError') toast('Could not make the picture on this phone'); }
 }
   const rcptNum = () => { const e = $('#rwp'); return e ? e.value.trim() : ''; };
-ACT.rcptText = () => { if (_receipt) window.open(waLink(rcptNum(), receiptText(_receipt)), '_blank', 'noopener'); };
-ACT.rcptChat = async () => {
+function rcptText() { if (_receipt) window.open(waLink(rcptNum(), receiptText(_receipt)), '_blank', 'noopener'); }
+async function rcptChat() {
   const n = rcptNum(); if (!_receipt) return; if (n.replace(/\D/g, '').length < 9) { toast('Type the customer WhatsApp number first'); return; }
   try { const blob = await receiptImage(_receipt), a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'receipt-' + (_receipt.date || today()) + '.png'; document.body.appendChild(a); a.click(); a.remove(); } catch (e) { /* ignore */ }
   toast('Picture saved. In the chat, tap the paperclip and choose it.');
   setTimeout(() => window.open(waLink(n, ''), '_blank', 'noopener'), 700);
-};
+}
   /* ---------------- TODAY ---------------- */
 function todayHTML() {
   const m = derived().mine, t = m.today;
@@ -983,6 +983,7 @@ async function adminCall(body, okMsg) {
 
 /* ---------------- events ---------------- */
 const ACT = {
+  rcptText, rcptChat,
   close: () => { closeSheet(); render(true); },
   login: doLogin, logout,
   seturl: () => { localStorage.removeItem(LS('api')); S.apiUrl = ''; render(); },
