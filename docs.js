@@ -140,12 +140,13 @@
       const sub = t => '<tr><td colspan="5" style="padding:5px 6px 3px;background:#F1F5F9;font-weight:800;color:' + esc(c1) + ';font-size:10.5px;letter-spacing:.4px">' + t + '</td></tr>';
       const rowsOf = list => list.map(i => '<tr><td ' + td + '>' + esc(i.p) + '</td><td ' + tdn + '>' + i.q + '</td><td ' + td + '>' + esc(i.un || '') + '</td><td ' + tdn + '>' + N(i.u) + '</td><td ' + tdn + '>' + N(i.q * i.u) + '</td></tr>').join('');
       h += '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:8px"><tr style="background:' + esc(c1) + ';color:#fff"><th style="text-align:left;padding:4px 6px">Description</th><th ' + th + '>Qty</th><th style="text-align:left;padding:4px 6px">Unit</th><th ' + th + '>Rate</th><th ' + th + '>Amount (GH₵)</th></tr>' +
-        (mats.length ? sub('MATERIALS' + (adj.clientMat ? ' (CLIENT BUYS, GUIDE PRICES)' : '')) + rowsOf(mats) : '') + (m.trans ? '<tr><td colspan="4" ' + td + '>Transport</td><td ' + tdn + '>' + N(m.trans) + '</td></tr>' : '') +
+        (mats.length ? sub('MATERIALS' + (adj.clientMat ? ' (CLIENT BUYS, GUIDE PRICES)' : '')) + rowsOf(mats) : '') + (m.trans ? sub('TRANSPORT') + '<tr><td colspan="4" ' + td + '>Transport / delivery</td><td ' + tdn + '>' + N(m.trans) + '</td></tr>' : '') +
         (labs.length ? sub('LABOUR / WORKMANSHIP') + rowsOf(labs) : '') + '</table>';
       const row = (a, b, st2) => '<tr><td style="padding:4px 8px;' + (st2 || '') + '">' + a + '</td><td style="padding:4px 8px;text-align:right;white-space:nowrap;' + (st2 || '') + '">' + b + '</td></tr>';
       h += '<table style="margin:6px 0 0 auto;border-collapse:collapse;font-size:11.5px;min-width:55%">';
-      if (mats.length) h += row(adj.clientMat ? 'Materials (client buys)' : 'Materials &amp; transport', adj.clientMat ? '<s style="color:' + mute + '">' + N(m.mat) + '</s>' + (m.trans ? ' + ' + N(m.trans) : '') : N(m.mat + m.trans));
-      if (labs.length) h += row('Labour', N(m.lab));
+      if (mats.length) h += row(adj.clientMat ? 'Materials (client buys)' : 'Materials', adj.clientMat ? '<s style="color:' + mute + '">' + N(m.mat) + '</s>' : N(m.mat));
+      if (m.trans) h += row('Transport', N(m.trans));
+      if (labs.length) h += row('Labour / workmanship', N(m.lab));
       if (m.disc) h += row('Discount' + (adj.discPct ? ' (' + (+adj.disc) + '%)' : ''), '- ' + N(m.disc), 'color:#B3261E');
       m.taxes.forEach(t => { h += row(t.n + ' (' + t.r + '%)', N(t.a), 'color:' + mute); });
       h += row('<b>' + (adj.clientMat ? 'TOTAL PAYABLE TO US' : 'GRAND TOTAL') + '</b>', '<b>GH₵ ' + N(total) + '</b>', 'background:' + esc(c1) + ';color:#fff;font-size:15px;padding:6px 8px');
@@ -228,20 +229,21 @@
   function priceOf(name) { const p = products().find(x => kk(x.name) === kk(name)); return p ? p.price : null; }
 
   function editSheet() {
-    const e = D.edit, wb = e.type === 'WB', custs = KL.derived().customers.filter(c => kk(c.name) !== kk(KL.WALKIN));
+    const e = D.edit, wb = e.type === 'WB', showLab = build() && !wb, custs = KL.derived().customers.filter(c => kk(c.name) !== kk(KL.WALKIN));
     sheet('<h2>' + (e.no ? 'Edit ' + esc(e.no) : 'New ' + T[e.type].toLowerCase()) + '</h2>' +
       (e.from ? '<p class="small muted" style="margin:0">From ' + esc(e.from) + '</p>' : '') +
       '<label>Customer</label><input id="dc" list="dcl" value="' + esc(e.customer) + '" autocomplete="off" placeholder="Name"><datalist id="dcl">' + custs.map(c => '<option value="' + esc(c.name) + '">').join('') + '</datalist>' +
       '<div class="picker"><div><label>Phone</label><input id="dp" inputmode="tel" value="' + esc(e.phone) + '"></div><div><label>' + (wb ? 'Deliver to' : 'Location') + '</label><input id="dl" value="' + esc(wb ? (e.dest || e.location) : e.location) + '"></div></div>' +
       (wb ? '' : '<label>Job / title (optional)</label><input id="dt" value="' + esc(e.title) + '" placeholder="Example: 3 rooms plasterboard ceiling">') +
       '<h3 style="margin:14px 0 4px">Items</h3><datalist id="dpl">' + products().map(p => '<option value="' + esc(p.name) + '">').join('') + '</datalist>' +
-      (e.items.length ? e.items.map((i, n) => '<div class="card" style="padding:10px;margin:6px 0"><input data-di="p" data-n="' + n + '" list="dpl" value="' + esc(i.p) + '" placeholder="Item">' +
+      (e.items.some(i => !(showLab && i.l)) ? e.items.map((i, n) => (showLab && i.l) ? '' : '<div class="card" style="padding:10px;margin:6px 0"><input data-di="p" data-n="' + n + '" list="dpl" value="' + esc(i.p) + '" placeholder="Item">' +
         '<div class="row" style="margin-top:6px"><div class="grow"><label style="margin:0">Qty</label><input data-di="q" data-n="' + n + '" type="number" inputmode="decimal" value="' + esc(i.q) + '"></div>' +
         '<div style="width:72px"><label style="margin:0">Unit</label><input data-di="un" data-n="' + n + '" value="' + esc(i.un || '') + '" placeholder="pcs"></div>' +
         (wb ? '' : '<div class="grow"><label style="margin:0">Price</label><input data-di="u" data-n="' + n + '" type="number" inputmode="decimal" value="' + esc(i.u) + '"></div>') +
         '<button class="btn sm danger" data-act="dDelLine" data-n="' + n + '" style="align-self:flex-end" aria-label="Remove line">✕</button></div>' +
-        (wb || !build() ? '' : '<label style="margin:6px 0 0;display:flex;align-items:center;gap:8px;font-weight:600"><input data-di="l" data-n="' + n + '" type="checkbox" style="width:auto;min-height:0"' + (i.l ? ' checked' : '') + '> Labour / workmanship</label>') + '</div>').join('') : '<p class="small muted">No items yet.</p>') +
-      '<div class="row" style="gap:8px"><button class="btn sm grow" data-act="dAddLine">+ Add item</button>' + (wb || !build() ? '' : '<button class="btn sm grow" data-act="dLabour" style="background:#ECFDF5;border-color:#6EE7B7;color:#065F46">+ Labour</button>') + (wb || (KL.hasMod && !KL.hasMod('est')) ? '' : '<button class="btn sm violet grow" data-act="dEstimator">Estimator</button>') + '</div>' +
+        '</div>').join('') : '<p class="small muted">No items yet.</p>') +
+      '<div class="row" style="gap:8px"><button class="btn sm grow" data-act="dAddLine">+ Add item</button>' + (wb || (KL.hasMod && !KL.hasMod('est')) ? '' : '<button class="btn sm violet grow" data-act="dEstimator">Estimator</button>') + '</div>' +
+      (showLab ? '<div class="card" style="padding:12px;margin-top:10px"><b>Labour / workmanship</b><div id="lab-blk">' + labourInner(e) + '</div></div>' : '') +
       (wb ? '<div class="picker"><div><label>Vehicle number</label><input id="dv" value="' + esc(e.vehicle) + '" placeholder="GT 4512-22"></div><div><label>Driver (name, phone)</label><input id="dd" value="' + esc(e.driver) + '"></div></div>' :
         '<div class="card" style="padding:12px;margin-top:10px"><b>' + (build() ? 'Transport, discount' : 'Discount') + (useTax() ? ' and tax' : '') + '</b>' +
         '<div class="picker">' + (build() ? '<div><label>Transport (GH₵)</label><input id="dtr" type="number" inputmode="decimal" value="' + esc(e.trans) + '" placeholder="0"></div>' : '') +
@@ -254,6 +256,7 @@
       (wb ? '' : '<label>Terms</label><textarea id="dterms" rows="3" style="width:100%;border:1.5px solid var(--line);border-radius:12px;padding:10px;font:inherit">' + esc(e.terms) + '</textarea>') +
       '<label>Note (optional)</label><input id="dnote" value="' + esc(e.note) + '">' +
       '<br><button class="btn primary block" data-act="dPreview">Preview</button>');
+    if (showLab && !D.rules && !D.rulesTried) { D.rulesTried = true; getRules().then(() => { if (D.edit && $('#lab-blk')) $('#lab-blk').innerHTML = labourInner(D.edit); }).catch(() => {}); }
   }
   function totalsHTML(e) {
     const m = docMoney(e.items, e), L = (a, b, c) => '<div class="row between small" style="padding:2px 0' + (c ? ';' + c : '') + '"><span>' + a + '</span><b>' + b + '</b></div>';
@@ -289,31 +292,39 @@
     else i[t.dataset.di] = t.value === '' ? '' : +t.value;
     live();
   });
-  /* ---------- labour picker: tick the work you are charging for, with its area and rate ---------- */
+  /* ---------- the labour section: each kind of labour is its own line, switched on and off with a tick ---------- */
   const LABJ = [['lab_struct', 'Structure works', 'm²'], ['lab_skim', 'Plasterboard skimming', 'm²'], ['lab_gen', 'General labour', 'm²'], ['lab_ac', 'Acoustic ceiling fixing', 'm²'], ['lab_pop', 'POP ceiling', 'm²'], ['lab_popc', 'POP cornice fixing', 'm'], ['lab_cornice', 'Cornice fixing (piece)', 'pcs'], ['lab_pt', 'Partition works', 'm²'], ['lab_paint', 'Painting', 'm²']];
-  ACT.dLabour = async () => {
-    readEdit();
-    const R = (await getRules()) || {}, have = {}; D.edit.items.forEach(i => { if (i.l) have[kk(i.p)] = i; });
-    D.lp = LABJ.map(x => { const nm = String(R[x[0] + '_item'] || x[1]), rate = +R[x[0] + '_rate'] || 0, h = have[kk(nm)]; return { p: nm, un: x[2], q: h ? h.q : '', u: h ? h.u : (rate || ''), on: !!h }; });
-    labourSheet();
-  };
-  function labourSheet() {
-    sheet('<h2>Labour / workmanship</h2><p class="small muted" style="margin-top:0">Tick the work you are charging for, then type the area and the rate. Work you leave unticked is not on the estimate.</p>' +
-      D.lp.map((x, n) => '<div class="card" style="padding:10px;margin:6px 0"><label style="margin:0;display:flex;align-items:center;gap:8px;font-weight:600"><input data-lp="on" data-n="' + n + '" type="checkbox" style="width:auto;min-height:0"' + (x.on ? ' checked' : '') + '> ' + esc(x.p) + '</label>' +
-        '<div class="row" style="margin-top:6px;gap:8px"><div class="grow"><label style="margin:0">Area / qty (' + esc(x.un) + ')</label><input data-lp="q" data-n="' + n + '" type="number" inputmode="decimal" value="' + esc(x.q) + '" placeholder="0"></div>' +
-        '<div class="grow"><label style="margin:0">Rate (GH₵)</label><input data-lp="u" data-n="' + n + '" type="number" inputmode="decimal" value="' + esc(x.u) + '" placeholder="0"></div></div></div>').join('') +
-      '<button class="btn primary block" data-act="dLabourAdd" style="margin-top:8px">Put ticked labour on the estimate</button><button class="btn ghost block" data-act="dLabourBack" style="margin-top:8px">Back</button>');
+  const labTypes = () => { const R = D.rules || {}; return LABJ.map(x => ({ key: x[0], nm: String(R[x[0] + '_item'] || x[1]), rate: +R[x[0] + '_rate'] || 0, un: x[2] })); };
+  function labourInner(e) {
+    const types = labTypes(), names = types.map(t => kk(t.nm));
+    let h = '<p class="small muted" style="margin:2px 0 6px">Tick the labour you are charging. Each one prints as its own line, apart from the materials and the transport.</p>';
+    types.forEach(t => {
+      const idx = e.items.findIndex(i => i.l && kk(i.p) === kk(t.nm)), it = idx >= 0 ? e.items[idx] : null;
+      h += '<div style="padding:6px 0;border-bottom:1px solid var(--line)"><label style="margin:0;display:flex;align-items:center;gap:8px;font-weight:600"><input data-lb="' + esc(t.key) + '" type="checkbox" style="width:auto;min-height:0"' + (it ? ' checked' : '') + '> ' + esc(t.nm) + '</label>' +
+        (it ? '<div class="row" style="margin-top:6px;gap:8px"><div class="grow"><label style="margin:0">Area / qty (' + esc(it.un || t.un) + ')</label><input data-di="q" data-n="' + idx + '" type="number" inputmode="decimal" value="' + esc(it.q) + '" placeholder="0"></div>' +
+          '<div class="grow"><label style="margin:0">Rate (GH₵)</label><input data-di="u" data-n="' + idx + '" type="number" inputmode="decimal" value="' + esc(it.u) + '" placeholder="0"></div></div>' : '') + '</div>';
+    });
+    e.items.forEach((i, n) => {   // other labour lines, for example ones typed by hand
+      if (!i.l || names.indexOf(kk(i.p)) >= 0) return;
+      h += '<div class="card" style="padding:10px;margin:8px 0 0"><input data-di="p" data-n="' + n + '" value="' + esc(i.p) + '" placeholder="Other labour, for example Painting of doors">' +
+        '<div class="row" style="margin-top:6px"><div class="grow"><label style="margin:0">Qty</label><input data-di="q" data-n="' + n + '" type="number" inputmode="decimal" value="' + esc(i.q) + '"></div>' +
+        '<div style="width:72px"><label style="margin:0">Unit</label><input data-di="un" data-n="' + n + '" value="' + esc(i.un || '') + '" placeholder="m²"></div>' +
+        '<div class="grow"><label style="margin:0">Rate</label><input data-di="u" data-n="' + n + '" type="number" inputmode="decimal" value="' + esc(i.u) + '"></div>' +
+        '<button class="btn sm danger" data-act="dDelLab" data-n="' + n + '" style="align-self:flex-end" aria-label="Remove line">✕</button></div></div>';
+    });
+    return h + '<button class="btn sm block" data-act="dAddLab" style="margin-top:8px">+ Other labour</button>';
   }
-  function readLabour() { document.querySelectorAll('[data-lp]').forEach(el => { const x = D.lp && D.lp[+el.dataset.n]; if (!x) return; const k = el.dataset.lp; if (k === 'on') x.on = el.checked; else x[k] = el.value === '' ? '' : +el.value; }); }
-  ACT.dLabourAdd = () => {
-    readLabour(); const pick = D.lp.filter(x => x.on);
-    const bad = pick.find(x => !(x.q > 0) || !(x.u > 0)); if (bad) { toast('Type the area and the rate for ' + bad.p); return; }
-    const names = D.lp.map(x => kk(x.p));
-    D.edit.items = D.edit.items.filter(i => !(i.l && names.indexOf(kk(i.p)) >= 0));   // a ticked line replaces the old one; an unticked one is taken off
-    pick.forEach(x => D.edit.items.push({ p: x.p, q: x.q, u: x.u, un: x.un, l: 1 }));
-    editSheet();
-  };
-  ACT.dLabourBack = () => { readLabour(); editSheet(); };
+  const labRefresh = () => { const el = $('#lab-blk'); if (el && D.edit) el.innerHTML = labourInner(D.edit); live(); };
+  document.addEventListener('change', ev => {
+    const t = ev.target; if (!D.edit || !t.dataset || t.dataset.lb === undefined) return;
+    readEdit(); const ty = labTypes().find(x => x.key === t.dataset.lb); if (!ty) return;
+    const idx = D.edit.items.findIndex(i => i.l && kk(i.p) === kk(ty.nm));
+    if (t.checked && idx < 0) D.edit.items.push({ p: ty.nm, q: '', u: ty.rate || '', un: ty.un, l: 1 });
+    else if (!t.checked && idx >= 0) D.edit.items.splice(idx, 1);
+    labRefresh();
+  });
+  ACT.dAddLab = () => { readEdit(); D.edit.items.push({ p: '', q: 1, u: 0, l: 1 }); labRefresh(); };
+  ACT.dDelLab = d => { readEdit(); D.edit.items.splice(+d.n, 1); labRefresh(); };
   ACT.dAddLine = () => { readEdit(); D.edit.items.push({ p: '', q: 1, u: 0 }); editSheet(); };
   ACT.dDelLine = d => { readEdit(); D.edit.items.splice(+d.n, 1); editSheet(); };
 
@@ -323,6 +334,7 @@
     if (!e.customer) { toast('Enter the customer'); return; }
     e.items = e.items.filter(i => String(i.p || '').trim());
     if (!e.items.length) { toast('Add at least one item'); editSheet(); return; }
+    const bl = e.items.find(i => i.l && !(+i.q > 0)); if (bl) { toast('Type the area for ' + bl.p + ', or untick it'); return; }
     // a new item typed by hand: offer once to keep it in the product list (owner only, with internet)
     if (S.session && S.session.role === 'admin' && navigator.onLine && e.type !== 'WB') {
       const known = products().map(p => kk(p.name)), asked = (D.askedNew = D.askedNew || {});
