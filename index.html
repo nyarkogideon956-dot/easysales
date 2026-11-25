@@ -697,10 +697,11 @@ function receiptSheet(b, fresh) {
     (bal > 0.004 ? '<div class="l red"><b>Balance owed</b><b>' + money(bal) + '</b></div>' : '<div class="l green"><b>Fully paid</b></div>') +
     (cu && cu.balance > 0.004 && bal > 0.004 ? '<div class="small muted">Total owed by this customer: ' + money(cu.balance) + '</div>' : '') + '</div><br>' +
     '<label>Customer WhatsApp number</label><input id="rwp" inputmode="tel" value="' + esc((cu && cu.phone) || '') + '" placeholder="Example: 0241234567">' +
-    '<button class="btn primary block" data-act="shareimg" style="margin:8px 0">Send receipt picture</button>' +
+    '<button class="btn primary block" data-act="shareimg" style="margin:8px 0;background:#16A34A;border-color:#16A34A">Send receipt picture on WhatsApp</button>' +
     '<button class="btn block" data-act="rcptChat" style="margin-bottom:6px">Number not saved? Open chat and attach the picture</button>' +
     '<p class="small muted" style="margin:0 0 8px">When you share a picture, WhatsApp only lists saved contacts and recent chats. If the number is not saved, use the second button: it saves the picture and opens the chat, then you tap the paperclip and choose the picture.</p>' +
-    '<div class="row"><button class="btn violet grow" data-act="rcptText">Send as text</button><button class="btn grow" data-act="close">' + (fresh ? 'New sale' : 'Close') + '</button></div>');
+    '<div class="row"><button class="btn violet grow" data-act="rcptText">Text only</button><button class="btn grow" data-act="close">' + (fresh ? 'New sale' : 'Close') + '</button></div>');
+  rcptBlob(b).catch(() => {});
 }
 // draws the receipt as a picture (logo, items, PAID / PART PAID stamp, MoMo details) and shares it, e.g. to WhatsApp
 function loadImg(src) { return new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; }); }
@@ -741,13 +742,16 @@ async function receiptImage(b) {
   g.font = F('bold 88'); const tw = g.measureText(st[0]).width; g.strokeRect(-tw / 2 - 26, -78, tw + 52, 110); g.textAlign = 'center'; g.fillText(st[0], 0, 4); g.restore();
   return new Promise(res => cv.toBlob(res, 'image/png'));
 }
+let _rcptBlob = null, _rcptKey = '';
+const rcptKey = b => JSON.stringify([b.date, b.time, b.customer, b.total, b.cash, b.momo, (b.items || []).length]);
+async function rcptBlob(b) { const k = rcptKey(b); if (_rcptBlob && _rcptKey === k) return _rcptBlob; const bl = await receiptImage(b); _rcptBlob = bl; _rcptKey = k; return bl; }
 async function shareReceipt(b) {
   try {
-    const blob = await receiptImage(b), file = new File([blob], 'receipt-' + (b.date || today()) + '.png', { type: 'image/png' });
+    const blob = await rcptBlob(b), file = new File([blob], 'receipt-' + (b.date || today()) + '.png', { type: 'image/png' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: bizName() + ' receipt' }); return; }
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = file.name; document.body.appendChild(a); a.click(); a.remove();
     toast('Receipt picture saved. Attach it in WhatsApp.');
-  } catch (e) { if (e && e.name !== 'AbortError') toast('Could not make the picture on this phone'); }
+  } catch (e) { if (e && e.name === 'NotAllowedError') toast('Receipt picture is ready. Tap Send again.'); else if (e && e.name !== 'AbortError') toast('Could not make the picture on this phone'); }
 }
   const rcptNum = () => { const e = $('#rwp'); return e ? e.value.trim() : ''; };
 function rcptText() { if (_receipt) window.open(waLink(rcptNum(), receiptText(_receipt)), '_blank', 'noopener'); }

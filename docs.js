@@ -94,8 +94,29 @@
     return { mat, lab, charged, trans, disc, base, taxes, tax, total: r2(base + tax) };
   }
   KL.docMoney = docMoney;
+  /* ---------- payment plan for each estimate: show or hide it, 1 to 3 payments, own percentages ---------- */
+  const PPK = 'es_pplans';
+  const ppMap = () => { try { return JSON.parse(localStorage.getItem(PPK) || '{}') || {}; } catch (e) { return {}; } };
+  const ppSaveLocal = (no, pp) => { try { const m = ppMap(); if (pp) m[no] = pp; else delete m[no]; localStorage.setItem(PPK, JSON.stringify(m)); } catch (e) { /* ignore */ } };
+  function planCustom(doc) {
+    const sc = doc && doc.data && doc.data.scope, pp = (sc && sc.pplan) || (doc && doc.no && ppMap()[doc.no]);
+    return pp && pp.stages && pp.stages.length ? { show: pp.show !== false, stages: pp.stages.map(x => ({ l: String(x.l || ''), p: +x.p || 0 })), auto: false } : null;
+  }
+  const ppDefaults = cm => (cm ? [['Before work starts', 50], ['When the job is 70% done', 35], ['After completion and inspection', 15]] : [['Before work starts', 70], ['When 60% of the work is done', 20], ['After completion and inspection', 10]]).map(x => ({ l: x[0], p: x[1] }));
+  const ppPreset = n => n === 1 ? [{ l: 'Full payment before work starts', p: 100 }] : n === 2 ? [{ l: 'Before work starts', p: 70 }, { l: 'After completion and inspection', p: 30 }] : ppDefaults(false);
+  const ppSumHTML = sm => Math.abs(sm - 100) < 0.01 ? '<span style="color:#1E7B4F">Total 100% ✓</span>' : '<span style="color:#B3261E">Total ' + (Math.round(sm * 100) / 100) + '%. It must add up to 100%.</span>';
+  const scopeOut = e => { const keep = e.pplan && !(e.pplan.auto && e.pplan.show); if (!keep) return e.scope || null; return Object.assign({ inc: [], exc: [] }, e.scope || {}, { pplan: { show: e.pplan.show, stages: e.pplan.stages } }); };
+  function planCard(e) {
+    if (!e.pplan || e.pplan.auto) e.pplan = { show: e.pplan ? e.pplan.show : true, stages: ppDefaults(e.clientMat), auto: true };
+    const pp = e.pplan, n = pp.stages.length;
+    return '<div class="card" style="padding:12px;margin-top:10px"><label style="margin:0;display:flex;align-items:center;gap:8px;font-weight:700"><input id="dpp-show" type="checkbox" style="width:auto;min-height:0"' + (pp.show ? ' checked' : '') + '> Show payment plan</label>' +
+      (pp.show ? '<div class="row" style="margin-top:8px;gap:8px;align-items:center"><span class="small muted">Number of payments</span>' + [1, 2, 3].map(k => '<button class="chip' + (n === k ? ' on' : '') + '" data-act="dPPn" data-n="' + k + '">' + k + '</button>').join('') + '</div>' +
+        pp.stages.map((x, k) => '<div class="row" style="margin-top:8px;gap:8px"><div class="grow"><input data-ppl="' + k + '" value="' + esc(x.l) + '"></div><div style="width:84px"><input data-ppp="' + k + '" type="number" inputmode="decimal" value="' + esc(x.p) + '" placeholder="%"></div></div>').join('') +
+        '<div id="pp-sum" class="small" style="margin-top:6px">' + ppSumHTML(pp.stages.reduce((a, x) => a + (+x.p || 0), 0)) + '</div>' : '') + '</div>';
+  }
+
   function plan(type, total, clientMat) {
-    const std = clientMat ? [['Before work starts', 50], ['When the job is 70% done', 35], ['After completion and inspection', 15]] : [['Before work starts', 85], ['After completion and inspection', 15]];
+    const std = clientMat ? [['Before work starts', 50], ['When the job is 70% done', 35], ['After completion and inspection', 15]] : [['Before work starts', 70], ['When 60% of the work is done', 20], ['After completion and inspection', 10]];
     return std.map(x => [x[0], x[1], r2(total * x[1] / 100)]);
   }
 
@@ -138,7 +159,7 @@
         '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:28px;font-size:10.5px;color:' + mute + ';text-align:center"><div style="border-top:1px solid #999;padding-top:4px">Dispatched by</div><div style="border-top:1px solid #999;padding-top:4px">Driver</div><div style="border-top:1px solid #999;padding-top:4px">Received by</div></div>';
     } else {
       const sub = t => '<tr><td colspan="5" style="padding:5px 6px 3px;background:#F1F5F9;font-weight:800;color:' + esc(c1) + ';font-size:10.5px;letter-spacing:.4px">' + t + '</td></tr>';
-      const rowsOf = list => list.map(i => '<tr><td ' + td + '>' + esc(i.p) + '</td><td ' + tdn + '>' + i.q + '</td><td ' + td + '>' + esc(i.un || '') + '</td><td ' + tdn + '>' + N(i.u) + '</td><td ' + tdn + '>' + N(i.q * i.u) + '</td></tr>').join('');
+      const rowsOf = list => list.map(i => i.un === 'lump' ? '<tr><td ' + td + '>' + esc(i.p) + '</td><td ' + tdn + '></td><td ' + td + '>Lump sum</td><td ' + tdn + '></td><td ' + tdn + '>' + N(i.q * i.u) + '</td></tr>' : '<tr><td ' + td + '>' + esc(i.p) + '</td><td ' + tdn + '>' + i.q + '</td><td ' + td + '>' + esc(i.un || '') + '</td><td ' + tdn + '>' + N(i.u) + '</td><td ' + tdn + '>' + N(i.q * i.u) + '</td></tr>').join('');
       h += '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:8px"><tr style="background:' + esc(c1) + ';color:#fff"><th style="text-align:left;padding:4px 6px">Description</th><th ' + th + '>Qty</th><th style="text-align:left;padding:4px 6px">Unit</th><th ' + th + '>Rate</th><th ' + th + '>Amount (GH₵)</th></tr>' +
         (mats.length ? sub('MATERIALS' + (adj.clientMat ? ' (CLIENT BUYS, GUIDE PRICES)' : '')) + rowsOf(mats) : '') + (m.trans ? sub('TRANSPORT') + '<tr><td colspan="4" ' + td + '>Transport / delivery</td><td ' + tdn + '>' + N(m.trans) + '</td></tr>' : '') +
         (labs.length ? sub('LABOUR / WORKMANSHIP') + rowsOf(labs) : '') + '</table>';
@@ -153,19 +174,22 @@
       if (inv) h += row('Paid so far', N(paid), 'color:#1E7B4F') + row('<b>BALANCE DUE</b>', '<b>GH₵ ' + N(Math.max(0, bal)) + '</b>', 'color:' + (bal > 0.004 ? '#B3261E' : '#1E7B4F') + ';font-size:13px');
       h += '</table>';
       if (inv && bal > 0.004 && doc.until) h += '<div style="margin-top:8px"><b>Please pay the balance by ' + esc(doc.until) + '.</b> Use <b>' + esc(doc.no || 'the invoice number') + '</b> as the payment reference.</div>';
-      h += '<div class="pp-cols" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:4px"><div>';
-      if (!inv && total > 0 && build()) h += h3('PAYMENT PLAN' + (adj.clientMat ? ' (WORKMANSHIP)' : '')) + '<table style="width:100%;border-collapse:collapse;font-size:11.5px">' + plan(doc.type, total, adj.clientMat).map(x => '<tr><td ' + td + '>' + x[0] + '</td><td ' + tdn + '>' + x[1] + '%</td><td ' + tdn + '><b>' + N(x[2]) + '</b></td></tr>').join('') + '</table>';
-      if ((c.momo || c.bank) && (!inv || bal > 0.004)) h += '<div style="margin-top:10px;border:1.5px solid ' + esc(c1) + ';border-radius:8px;overflow:hidden"><div style="background:' + esc(c1) + ';color:#fff;font-weight:800;padding:4px 10px;font-size:11px;letter-spacing:.5px">HOW TO PAY</div><div style="padding:6px 10px;line-height:1.6">' +
-        (c.momo ? 'Mobile Money: <b>' + esc(c.momo) + '</b>' + (c.momoName ? ' (' + esc(c.momoName) + ')' : '') : '') + (c.momo && c.bank ? '<br>' : '') + (c.bank ? 'Bank: <b>' + esc(c.bank) + '</b>' : '') + '<div style="font-size:10.5px;color:' + mute + '">Use <b>' + esc(doc.no || 'the document number') + '</b> as the reference and send us a screenshot after paying.</div></div></div>';
+      h += '<div class="pp-cols" style="display:block;margin-top:4px"><div>';
+      const stageBox = x => '<div style="flex:1;border:1px solid #D5DAE0;border-radius:8px;padding:7px 5px;text-align:center"><div style="font-size:15px;font-weight:800;color:' + esc(c1) + '">' + x[1] + '%</div><div style="font-size:10px;color:' + mute + ';line-height:1.3">' + x[0] + '</div><div style="font-weight:700;margin-top:3px">' + N(x[2]) + '</div></div>';
+      const pc = planCustom(doc), stages = pc ? (() => { let left = total; return pc.stages.map((x, k, a) => { const amt = k === a.length - 1 ? r2(left) : r2(total * x.p / 100); left -= amt; return [x.l, x.p, amt]; }); })() : plan(doc.type, total, adj.clientMat);
+      if (!inv && total > 0 && build() && (!pc || pc.show)) h += h3('PAYMENT PLAN' + (adj.clientMat ? ' (WORKMANSHIP)' : '')) + '<div style="display:flex;gap:8px">' + stages.map(stageBox).join('') + '</div>';
+      if ((c.momo || c.bank) && (!inv || bal > 0.004)) h += '<div style="margin-top:14px;background:#F3F5F8;border-radius:8px;padding:8px 10px;line-height:1.6"><div style="font-weight:800;color:' + esc(c1) + ';font-size:11px;letter-spacing:.4px">HOW TO PAY</div>' +
+        (c.momo ? 'Mobile Money: <b>' + esc(c.momo) + '</b>' + (c.momoName ? ' (' + esc(c.momoName) + ')' : '') : '') + (c.momo && c.bank ? '<br>' : '') + (c.bank ? 'Bank: <b>' + esc(c.bank) + '</b>' : '') + '<div style="font-size:10px;color:' + mute + '">Use <b>' + esc(doc.no || 'the document number') + '</b> as the reference and send us a screenshot after paying.</div></div>';
       h += '</div><div>';
     }
     if (doc.data.note) h += '<div style="margin-top:8px"><b>Notes:</b> ' + esc(doc.data.note) + '</div>';
     const sc = doc.data.scope;
-    if (sc && !wb && (sc.inc.length || sc.exc.length)) h += h3('WHAT THIS PRICE COVERS') + '<table style="width:100%;border-collapse:collapse;font-size:11px">' +
-      (sc.inc.length ? '<tr><td style="padding:2px 0;width:96px;vertical-align:top;color:#1E7B4F;font-weight:700">✓ Included</td><td style="padding:3px 0">' + sc.inc.map(esc).join(', ') + '</td></tr>' : '') +
-      (sc.exc.length ? '<tr><td style="padding:2px 0;width:96px;vertical-align:top;color:#B3261E;font-weight:700">✗ Not included</td><td style="padding:3px 0">' + sc.exc.map(esc).join(', ') + '</td></tr>' : '') + '</table>';
-    const terms = String(doc.data.terms || '').split(/\n|(?<=\.)\s+(?=[A-Z])/).map(x => x.trim()).filter(Boolean);
-    if (terms.length && !wb) h += h3('TERMS &amp; CONDITIONS') + '<ul style="margin:0;padding-left:16px;font-size:10.5px;line-height:1.45">' + terms.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>';
+    if (sc && !wb && (sc.inc.length || sc.exc.length)) h += '<div style="margin-top:14px;font-size:10.5px;color:' + mute + ';line-height:1.6">' +
+      (sc.inc.length ? '<b style="color:#1E7B4F">Included:</b> ' + sc.inc.map(esc).join(', ') : '') + (sc.inc.length && sc.exc.length ? ' &nbsp;·&nbsp; ' : '') +
+      (sc.exc.length ? '<b style="color:#B3261E">Not included:</b> ' + sc.exc.map(esc).join(', ') : '') + '</div>';
+    const fillT = s => s.replace(/\{(valid|until|date)\}/gi, doc.until || '').replace(/\{days\}/gi, String(c.estDays || 14));
+    const terms = fillT(String(doc.data.terms || '')).split(/\n|(?<=\.)\s+(?=[A-Z])/).map(x => x.trim()).filter(Boolean);
+    if (terms.length && !wb) h += '<div style="margin-top:10px;font-size:10px;color:' + mute + ';line-height:1.55"><b>Terms</b><br>' + terms.map(x => '&bull; ' + esc(x)).join('<br>') + '</div>';
     const wm = parseFloat(c.warranty) || 0, fd = parseFloat(c.fixDays) || 0;
     if (inv && (wm > 0 || fd > 0)) h += h3('OUR PROMISE') + '<div style="font-size:10.5px;line-height:1.5">' + (wm > 0 ? '<b>Warranty: ' + wm + ' month' + (wm === 1 ? '' : 's') + '</b> on our workmanship from the day the work is finished. ' : '') + (fd > 0 ? 'Please report any problem within <b>' + fd + ' day' + (fd === 1 ? '' : 's') + '</b> of handover so we can fix it quickly.' : '') + '</div>';
     if (!wb) h += '</div></div>';
@@ -193,9 +217,11 @@
     const mine = rms.length && cfg().showRooms !== 'Yes' ? '<details class="card small" style="margin:0 0 8px"><summary><b>Your measurements</b> (the client does not see these)</summary>' + rms.map(r => '<div class="row between" style="padding:2px 0"><span>' + esc(r.n || '') + ' · ' + esc(r.t || 'PB') + (r.fr === 'wood' ? ' on wood' : '') + (r.c ? ' + cornice' : '') + '</span><span>' + esc(r.size || '') + ' · <b>' + (r.m2 !== undefined ? r.m2 : r2((+r.l || 0) * (+r.w || 0))) + ' m²</b></span></div>').join('') + '</details>' : '';
     sheet('<h2>' + T[t] + ' ' + esc(doc.no) + ' <span class="badge ' + st[1] + '">' + st[0] + '</span></h2>' + mine + paperHTML(doc, false) +
       '<div style="display:grid;gap:8px;margin-top:12px">' + acts +
-      '<div class="row"><button class="btn grow" data-act="dPrint">Print / PDF</button><button class="btn grow" data-act="dWa">WhatsApp</button></div>' +
+      '<button class="btn primary block" style="background:#16A34A;border-color:#16A34A" data-act="dShare">Send PDF on WhatsApp</button>' +
+      '<div class="row"><button class="btn grow" data-act="dPrint">Print / PDF</button><button class="btn grow" data-act="dWa">Send as text</button></div>' +
       (t === 'INV' && KL.smallPrint ? '<button class="btn block" style="margin-top:8px" data-act="spDoc">🖨 Small receipt printer</button>' : '') +
       (isOwner() ? '<button class="btn danger block" data-act="dDel">Delete</button>' : '') + '</div>');
+    setTimeout(() => { pdfReady(doc).catch(() => {}); }, 500);
   }
   function remaining(inv) {
     const done = inv.delivered || {};
@@ -215,7 +241,7 @@
     return { type, no: '', customer: '', phone: '', location: '', title: '', from: '', items: [], terms: type === 'INV' ? (c.invTerms || '') : type === 'WB' ? '' : (c.estTerms || ''), note: '', vehicle: '', driver: '', dest: '', cash: '', momo: '', rooms: null, trans: '', disc: '', discPct: false, tax: false, clientMat: false };
   }
   ACT.dNew = d => { D.edit = Object.assign(blank(d.k || D.type), d.pre || {}); editSheet(); };
-  ACT.dEdit = () => { const v = D.view; D.edit = Object.assign(blank(v.type), { no: v.no, customer: v.customer, phone: v.phone, location: v.location, title: v.title, from: v.from, items: (v.data.items || []).map(i => Object.assign({}, i)), terms: v.data.terms || '', note: v.data.note || '', vehicle: v.data.vehicle || '', driver: v.data.driver || '', dest: v.data.dest || '', rooms: v.data.rooms || null, scope: v.data.scope || null }, adjOf(v)); editSheet(); };
+  ACT.dEdit = () => { const v = D.view; D.edit = Object.assign(blank(v.type), { no: v.no, customer: v.customer, phone: v.phone, location: v.location, title: v.title, from: v.from, items: (v.data.items || []).map(i => Object.assign({}, i)), terms: v.data.terms || '', note: v.data.note || '', vehicle: v.data.vehicle || '', driver: v.data.driver || '', dest: v.data.dest || '', rooms: v.data.rooms || null, scope: v.data.scope || null, pplan: planCustom(v) }, adjOf(v)); editSheet(); };
   ACT.dConvert = d => {
     const v = D.view, k = d.k;
     const e = Object.assign(blank(k), { customer: v.customer, phone: v.phone, location: v.location, title: v.title, from: v.no, items: (v.data.items || []).map(i => Object.assign({}, i)), rooms: v.data.rooms || null, scope: v.data.scope || null }, k === 'WB' ? {} : adjOf(v));
@@ -252,6 +278,7 @@
         (!build() ? '' : '<label style="display:flex;align-items:center;gap:8px;font-weight:600;margin-top:6px"><input id="dcm" type="checkbox" style="width:auto;min-height:0"' + (e.clientMat ? ' checked' : '') + '> Client buys the materials (we charge labour only)</label>') +
         '<div id="dtot" style="margin-top:10px">' + totalsHTML(e) + '</div></div>') +
       (e.type === 'INV' && !e.no ? '<div class="picker"><div><label>Paid now: cash</label><input id="dcash" type="number" inputmode="decimal" value="' + esc(e.cash) + '" placeholder="0"></div><div><label>Paid now: MoMo</label><input id="dmomo" type="number" inputmode="decimal" value="' + esc(e.momo) + '" placeholder="0"></div></div>' : '') +
+      (e.type === 'INV' || wb || !build() ? '' : planCard(e)) +
       scopeHTML(e) +
       (wb ? '' : '<label>Terms</label><textarea id="dterms" rows="3" style="width:100%;border:1.5px solid var(--line);border-radius:12px;padding:10px;font:inherit">' + esc(e.terms) + '</textarea>') +
       '<label>Note (optional)</label><input id="dnote" value="' + esc(e.note) + '">' +
@@ -280,7 +307,21 @@
     document.querySelectorAll('[data-di]').forEach(el => { const i = e.items[+el.dataset.n]; if (!i) return; const k = el.dataset.di; i[k] = k === 'l' ? (el.checked ? 1 : 0) : (k === 'p' || k === 'un') ? el.value : el.value === '' ? '' : +el.value; });
     if (document.querySelector('[data-sc]')) { const inc = [], exc = []; document.querySelectorAll('[data-sc]').forEach(el => (el.checked ? inc : exc).push(el.dataset.sc)); e.scope = { inc, exc }; }
     readExtras();
+    if ($('#dpp-show')) {
+      const show = $('#dpp-show').checked, ls = document.querySelectorAll('[data-ppl]'), ps = document.querySelectorAll('[data-ppp]');
+      const stages = ls.length ? Array.from(ls).map((el, k) => ({ l: el.value.trim() || 'Payment ' + (k + 1), p: +ps[k].value || 0 })) : (e.pplan ? e.pplan.stages : ppDefaults(e.clientMat));
+      e.pplan = { show, stages, auto: show && JSON.stringify(stages) === JSON.stringify(ppDefaults(e.clientMat)) };
+    }
   }
+  ACT.dPPn = d => { readEdit(); D.edit.pplan = { show: true, stages: ppPreset(+d.n), auto: false }; editSheet(); };
+  document.addEventListener('change', ev => {
+    if (!D.edit) return; const id = ev.target.id;
+    if (id === 'dpp-show') { readEdit(); editSheet(); }
+    else if (id === 'dcm' && D.edit.pplan && D.edit.pplan.auto) { const sh = D.edit.pplan.show; readEdit(); D.edit.pplan = { show: sh, stages: ppDefaults(D.edit.clientMat), auto: true }; editSheet(); }
+  });
+  document.addEventListener('input', ev => {
+    if (D.edit && ev.target.dataset && ev.target.dataset.ppp !== undefined) { const el = $('#pp-sum'); if (el) el.innerHTML = ppSumHTML(Array.from(document.querySelectorAll('[data-ppp]')).reduce((a, x) => a + (+x.value || 0), 0)); }
+  });
   const live = () => { const el = $('#dtot'); if (el && D.edit) el.innerHTML = totalsHTML(D.edit); };
   ['input', 'change'].forEach(evn => document.addEventListener(evn, ev => { if (D.edit && ['dtr', 'ddi', 'ddp', 'dtx', 'dcm'].indexOf(ev.target.id) >= 0) { readExtras(); live(); } }));
   document.addEventListener('change', ev => { const t = ev.target; if (D.edit && t.dataset && t.dataset.di === 'l') { const i = D.edit.items[+t.dataset.n]; if (i) i.l = t.checked ? 1 : 0; live(); } });
@@ -301,8 +342,9 @@
     types.forEach(t => {
       const idx = e.items.findIndex(i => i.l && kk(i.p) === kk(t.nm)), it = idx >= 0 ? e.items[idx] : null;
       h += '<div style="padding:6px 0;border-bottom:1px solid var(--line)"><label style="margin:0;display:flex;align-items:center;gap:8px;font-weight:600"><input data-lb="' + esc(t.key) + '" type="checkbox" style="width:auto;min-height:0"' + (it ? ' checked' : '') + '> ' + esc(t.nm) + '</label>' +
-        (it ? '<div class="row" style="margin-top:6px;gap:8px"><div class="grow"><label style="margin:0">Area / qty (' + esc(it.un || t.un) + ')</label><input data-di="q" data-n="' + idx + '" type="number" inputmode="decimal" value="' + esc(it.q) + '" placeholder="0"></div>' +
-          '<div class="grow"><label style="margin:0">Rate (GH₵)</label><input data-di="u" data-n="' + idx + '" type="number" inputmode="decimal" value="' + esc(it.u) + '" placeholder="0"></div></div>' : '') + '</div>';
+        (it ? '<div class="row" style="margin-top:6px;gap:8px">' + (it.un === 'lump' ? '' : '<div class="grow"><label style="margin:0">Area / qty (' + esc(it.un || t.un) + ')</label><input data-di="q" data-n="' + idx + '" type="number" inputmode="decimal" value="' + esc(it.q) + '" placeholder="0"></div>') +
+          '<div class="grow"><label style="margin:0">' + (it.un === 'lump' ? 'Amount (GH₵)' : 'Rate (GH₵)') + '</label><input data-di="u" data-n="' + idx + '" type="number" inputmode="decimal" value="' + esc(it.u) + '" placeholder="0"></div></div>' +
+          '<label style="margin:6px 0 0;display:flex;align-items:center;gap:8px;font-size:13px"><input data-lump="' + esc(t.key) + '" type="checkbox" style="width:auto;min-height:0"' + (it.un === 'lump' ? ' checked' : '') + '> One price for the whole job (not per ' + esc(t.un) + ')</label>' : '') + '</div>';
     });
     e.items.forEach((i, n) => {   // other labour lines, for example ones typed by hand
       if (!i.l || names.indexOf(kk(i.p)) >= 0) return;
@@ -316,7 +358,13 @@
   }
   const labRefresh = () => { const el = $('#lab-blk'); if (el && D.edit) el.innerHTML = labourInner(D.edit); live(); };
   document.addEventListener('change', ev => {
-    const t = ev.target; if (!D.edit || !t.dataset || t.dataset.lb === undefined) return;
+    const t = ev.target; if (!D.edit || !t.dataset) return;
+    if (t.dataset.lump !== undefined) {
+      readEdit(); const ty2 = labTypes().find(x => x.key === t.dataset.lump); const ix = ty2 ? D.edit.items.findIndex(x => x.l && kk(x.p) === kk(ty2.nm)) : -1;
+      if (ix >= 0) { if (t.checked) { D.edit.items[ix].un = 'lump'; D.edit.items[ix].q = 1; D.edit.items[ix].u = ''; } else { D.edit.items[ix].un = ty2.un; D.edit.items[ix].q = ''; D.edit.items[ix].u = ty2.rate || ''; } labRefresh(); }
+      return;
+    }
+    if (t.dataset.lb === undefined) return;
     readEdit(); const ty = labTypes().find(x => x.key === t.dataset.lb); if (!ty) return;
     const idx = D.edit.items.findIndex(i => i.l && kk(i.p) === kk(ty.nm));
     if (t.checked && idx < 0) D.edit.items.push({ p: ty.nm, q: '', u: ty.rate || '', un: ty.un, l: 1 });
@@ -335,6 +383,7 @@
     e.items = e.items.filter(i => String(i.p || '').trim());
     if (!e.items.length) { toast('Add at least one item'); editSheet(); return; }
     const bl = e.items.find(i => i.l && !(+i.q > 0)); if (bl) { toast('Type the area for ' + bl.p + ', or untick it'); return; }
+    if (e.pplan && e.pplan.show && build() && e.type !== 'INV' && e.type !== 'WB') { const sm = e.pplan.stages.reduce((a, x) => a + (+x.p || 0), 0); if (Math.abs(sm - 100) > 0.01 || e.pplan.stages.some(x => !(+x.p > 0))) { toast('Payment plan: the percentages must add up to 100'); return; } }
     // a new item typed by hand: offer once to keep it in the product list (owner only, with internet)
     if (S.session && S.session.role === 'admin' && navigator.onLine && e.type !== 'WB') {
       const known = products().map(p => kk(p.name)), asked = (D.askedNew = D.askedNew || {});
@@ -350,7 +399,7 @@
     if (e.items.some(i => !(+i.q > 0) || (e.type !== 'WB' && !(+i.u >= 0)))) { toast('Check quantities and prices'); editSheet(); return; }
     const total = e.type === 'WB' ? 0 : docMoney(e.items, e).total, paid = r2((+e.cash || 0) + (+e.momo || 0));
     if (e.type === 'INV' && paid > total + 0.001) { toast('Paid is more than the total'); editSheet(); return; }
-    const doc = { type: e.type, no: e.no || 'New', date: today(), customer: e.customer, phone: e.phone, location: e.location, title: e.title, from: e.from, paid, data: { items: e.items, terms: e.terms, note: e.note, vehicle: e.vehicle, driver: e.driver, dest: e.dest, rooms: e.rooms, scope: e.scope || null, adj: { trans: +e.trans || 0, disc: +e.disc || 0, discPct: e.discPct, tax: e.tax, clientMat: e.clientMat } } };
+    const doc = { type: e.type, no: e.no || 'New', date: today(), customer: e.customer, phone: e.phone, location: e.location, title: e.title, from: e.from, paid, data: { items: e.items, terms: e.terms, note: e.note, vehicle: e.vehicle, driver: e.driver, dest: e.dest, rooms: e.rooms, scope: scopeOut(e), adj: { trans: +e.trans || 0, disc: +e.disc || 0, discPct: e.discPct, tax: e.tax, clientMat: e.clientMat } } };
     sheet('<h2>Check before saving</h2><p class="small muted" style="margin-top:0">This is exactly what your customer will see.</p>' + paperHTML(doc, true) +
       '<div class="row" style="margin-top:12px"><button class="btn grow" data-act="dBack">Edit</button><button class="btn primary grow" data-act="dSave">Confirm and save</button></div>');
   };
@@ -358,10 +407,12 @@
   ACT.dSave = async (d, btn) => {
     const e = D.edit; if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
     try {
-      const r = await api('docs', { op: 'save', type: e.type, no: e.no, customer: e.customer, phone: e.phone, location: e.location, title: e.title, from: e.from, items: e.items, terms: e.terms, note: e.note, vehicle: e.vehicle, driver: e.driver, dest: e.dest, rooms: e.rooms, scope: e.scope || null, cash: +e.cash || 0, momo: +e.momo || 0, trans: +e.trans || 0, disc: +e.disc || 0, discPct: e.discPct, tax: e.tax, clientMat: e.clientMat });
+      const r = await api('docs', { op: 'save', type: e.type, no: e.no, customer: e.customer, phone: e.phone, location: e.location, title: e.title, from: e.from, items: e.items, terms: e.terms, note: e.note, vehicle: e.vehicle, driver: e.driver, dest: e.dest, rooms: e.rooms, scope: scopeOut(e), cash: +e.cash || 0, momo: +e.momo || 0, trans: +e.trans || 0, disc: +e.disc || 0, discPct: e.discPct, tax: e.tax, clientMat: e.clientMat });
       if (!r.ok) { toast(errText(r.error)); if (btn) { btn.disabled = false; btn.textContent = 'Confirm and save'; } return; }
+      { const so = scopeOut(e); ppSaveLocal(r.doc.no, so && so.pplan ? so.pplan : null); }
       toast(T[e.type] + ' ' + r.doc.no + ' saved'); D.edit = null; D.type = r.doc.type;
-      await loadDocs(); const doc = findDoc(r.doc.no) || r.doc; viewSheet(doc);
+      D.list = (D.list || []).filter(x => x.no !== r.doc.no); D.list.unshift(r.doc);   // show the saved document at once; the list refreshes behind it
+      viewSheet(r.doc); loadDocs().catch(() => {});
       if (e.type === 'INV') KL.refreshCache();
     } catch (err) { toast('Needs internet to save'); if (btn) { btn.disabled = false; btn.textContent = 'Confirm and save'; } }
   };
@@ -399,6 +450,82 @@
     btn.disabled = true;
     try { const r = await api('docs', { op: 'delete', no: D.view.no, reason }); if (!r.ok) { toast(errText(r.error)); btn.disabled = false; return; } toast('Deleted'); closeSheet(); await loadDocs(); KL.refreshCache(); } catch (e) { toast('Needs internet'); btn.disabled = false; }
   };
+
+  /* ---------- a real PDF made inside the app, shared straight to WhatsApp (no print screen, no saving first) ---------- */
+  function pdfFromJpegs(pages) {
+    const A4W = 595.28, A4H = 841.89, enc = s => new TextEncoder().encode(s), parts = [], offs = []; let len = 0;
+    const put = d => { const b = typeof d === 'string' ? enc(d) : d; parts.push(b); len += b.length; };
+    const obj = (n, d) => { offs[n] = len; put(n + ' 0 obj\n' + d + '\nendobj\n'); };
+    const strm = (n, dict, bytes) => { offs[n] = len; put(n + ' 0 obj\n<< ' + dict + ' /Length ' + bytes.length + ' >>\nstream\n'); put(bytes); put('\nendstream\nendobj\n'); };
+    put('%PDF-1.4\n');
+    const kids = pages.map((_, k) => (3 + k * 3) + ' 0 R').join(' ');
+    obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
+    obj(2, '<< /Type /Pages /Kids [' + kids + '] /Count ' + pages.length + ' >>');
+    pages.forEach((pg, k) => {
+      const pid = 3 + k * 3, cid = pid + 1, iid = pid + 2, s = Math.min(A4W / pg.w, A4H / pg.h), w = pg.w * s, h = pg.h * s, x = (A4W - w) / 2, y = A4H - h;
+      obj(pid, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + A4W + ' ' + A4H + '] /Resources << /XObject << /Im' + k + ' ' + iid + ' 0 R >> >> /Contents ' + cid + ' 0 R >>');
+      const c = 'q ' + w.toFixed(2) + ' 0 0 ' + h.toFixed(2) + ' ' + x.toFixed(2) + ' ' + y.toFixed(2) + ' cm /Im' + k + ' Do Q';
+      strm(cid, '', enc(c));
+      strm(iid, '/Type /XObject /Subtype /Image /Width ' + pg.w + ' /Height ' + pg.h + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode', pg.bytes);
+    });
+    const N = 2 + pages.length * 3, xr = len;
+    put('xref\n0 ' + (N + 1) + '\n0000000000 65535 f \n');
+    for (let n = 1; n <= N; n++) put(String(offs[n]).padStart(10, '0') + ' 00000 n \n');
+    put('trailer\n<< /Size ' + (N + 1) + ' /Root 1 0 R >>\nstartxref\n' + xr + '\n%%EOF');
+    return new Blob(parts, { type: 'application/pdf' });
+  }
+  async function paperCanvas(doc) {
+    const W = 760, host = document.createElement('div');
+    host.style.cssText = 'position:absolute;left:-9999px;top:0;width:' + W + 'px;background:#fff';
+    host.innerHTML = paperHTML(doc, false); document.body.appendChild(host);
+    try {
+      const pp = host.querySelector('.paper'); pp.style.border = '0'; pp.style.borderRadius = '0'; pp.style.fontFamily = 'system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif';
+      const H = Math.ceil(pp.scrollHeight) + 4, xml = new XMLSerializer().serializeToString(pp);
+      const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H + '"><foreignObject width="100%" height="100%">' + xml + '</foreignObject></svg>';
+      const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); });
+      const sc = 2, cv = document.createElement('canvas'); cv.width = W * sc; cv.height = H * sc;
+      const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); g.scale(sc, sc); g.drawImage(img, 0, 0);
+      return cv;
+    } finally { host.remove(); }
+  }
+  async function makePdfFile(doc) {
+    const cv = await paperCanvas(doc), pageH = Math.round(cv.width * 841.89 / 595.28), slices = [];
+    if (cv.height <= pageH * 1.12) slices.push([0, cv.height]);
+    else for (let y = 0; y < cv.height; y += pageH) slices.push([y, Math.min(pageH, cv.height - y)]);
+    const pages = [];
+    for (const [y, h] of slices) {
+      const c2 = document.createElement('canvas'); c2.width = cv.width; c2.height = h; const g = c2.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c2.width, h); g.drawImage(cv, 0, y, cv.width, h, 0, 0, cv.width, h);
+      const blob = await new Promise(r => c2.toBlob(r, 'image/jpeg', 0.88));
+      pages.push({ bytes: new Uint8Array(await blob.arrayBuffer()), w: c2.width, h });
+    }
+    const name = (T[doc.type] || 'Document') + '-' + doc.no + '-' + String(doc.customer || '').replace(/[^A-Za-z0-9]+/g, '-').slice(0, 24) + '.pdf';
+    return new File([pdfFromJpegs(pages)], name, { type: 'application/pdf' });
+  }
+  const pdfKey = v => [v.type, v.no, v.total, v.paid || 0, v.status || '', JSON.stringify(v.data || {}).length].join('|');
+  function pdfReady(v) {
+    const k = pdfKey(v); D.pdf = D.pdf || {};
+    if (D.pdf.key === k && D.pdf.p) return D.pdf.p;
+    D.pdf = { key: k, p: makePdfFile(v) }; D.pdf.p.catch(() => { if (D.pdf && D.pdf.key === k) D.pdf = null; });
+    return D.pdf.p;
+  }
+  ACT.dShare = async (d, btn) => {
+    const v = D.view; if (!v) return;
+    const lab = btn ? btn.textContent : ''; if (btn) { btn.disabled = true; btn.textContent = 'Preparing PDF…'; }
+    try {
+      const file = await pdfReady(v);
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: bizName() + ' ' + (T[v.type] || '') + ' ' + v.no }); }
+        catch (e) { if (e && e.name === 'AbortError') return; if (e && e.name === 'NotAllowedError') { toast('PDF is ready. Tap the button again to send it.'); return; } throw e; }
+      } else {
+        const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; document.body.appendChild(a); a.click(); a.remove();
+        toast('PDF downloaded. Attach it in WhatsApp.');
+        let n = String(v.phone || '').replace(/[^\d]/g, ''); if (n.startsWith('0')) n = '233' + n.slice(1);
+        if (n) setTimeout(() => window.open('https://wa.me/' + n + '?text=' + encodeURIComponent(bizName() + ' - ' + (T[v.type] || '') + ' ' + v.no), '_blank', 'noopener'), 900);
+      }
+    } catch (e) { toast('Could not make the PDF on this device. Use Print / PDF.'); }
+    finally { if (btn) { btn.disabled = false; btn.textContent = lab; } }
+  };
+
 
   /* ---------- print / PDF and WhatsApp ---------- */
   ACT.dPrint = () => {
