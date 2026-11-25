@@ -172,10 +172,12 @@
       (c.status === 'Ready' ? '<button class="btn primary block" data-act="cfCollect">Customer collected it</button>' : '') +
       (c.phone && c.status === 'Ready' ? '<button class="btn violet block" data-act="cfTell">Tell customer it is ready (WhatsApp)</button>' : '') +
       (c.balance > 0.004 ? '<button class="btn block" data-act="cfPay">Record payment (' + money(c.balance) + ' to pay)</button>' : '') +
-      '<div class="row"><button class="btn grow" data-act="cfPrint">Print ticket</button><button class="btn grow" data-act="cfWa">Send ticket</button></div>' +
+      '<button class="btn primary block" style="background:#16A34A;border-color:#16A34A" data-act="cfPic">Send ticket picture on WhatsApp</button>' +
+      '<div class="row"><button class="btn grow" data-act="cfPrint">Print ticket</button><button class="btn grow" data-act="cfWa">Send as text</button></div>' +
       '<button class="btn ghost block" data-act="cfEdit">Edit details / price / parts</button>' +
       (S.session.role === 'admin' ? '<button class="btn danger block" data-act="cfDel">Delete</button>' : '') + '</div>' +
       '<h3 style="margin-top:14px">History</h3>' + log.map(l => '<div class="small" style="padding:3px 0;border-bottom:1px solid var(--line)"><b>' + esc(l.s) + '</b> · ' + esc(l.d) + ' · ' + esc(l.by || '') + (l.n ? ' · ' + esc(l.n) : '') + '</div>').join(''));
+    setTimeout(() => { ticketReady(c).catch(() => {}); }, 500);
   }
   async function setStatus(s, extra) {
     try { const r = await api('cards', Object.assign({ op: 'status', no: C.v.no, status: s }, extra || {})); if (!r.ok) { toast(errText(r.error)); return false; } toast(s); await load(); view(C.v.no); return true; } catch (e) { toast('Needs internet'); return false; }
@@ -203,6 +205,46 @@
   };
   const wa = (p, t) => { let n = String(p || '').replace(/[^\d]/g, ''); if (n.startsWith('0')) n = '233' + n.slice(1); window.open('https://wa.me/' + n + '?text=' + encodeURIComponent(t), '_blank', 'noopener'); };
   ACT.cfTell = () => { const c = C.v; wa(c.phone, 'Hello ' + c.customer + ', your ' + c.item + ' is ready at ' + bizName() + '.' + (c.balance > 0.004 ? ' Balance to pay: ' + money(c.balance) + '.' : '') + ' Ticket number: ' + c.no + '.' + (cfg().location ? '\n' + cfg().location : '') + '\n\n' + POWERED); };
+  /* ---------- the ticket as a picture, drawn before the tap so WhatsApp opens at once ---------- */
+  async function ticketBlob(c) {
+    const W = 520, host = document.createElement('div');
+    host.style.cssText = 'position:absolute;left:-9999px;top:0;width:' + W + 'px;background:#fff';
+    host.innerHTML = ticketHTML(c, false); document.body.appendChild(host);
+    try {
+      const pp = host.querySelector('.paper'); pp.style.border = '0'; pp.style.borderRadius = '0'; pp.style.fontFamily = 'system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif';
+      pp.querySelectorAll('.muted').forEach(x => { x.style.color = '#5B6B78'; });
+      const H = Math.ceil(pp.scrollHeight) + 4, xml = new XMLSerializer().serializeToString(pp);
+      const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H + '"><foreignObject width="100%" height="100%">' + xml + '</foreignObject></svg>';
+      const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); });
+      const sc = 2, cv = document.createElement('canvas'); cv.width = W * sc; cv.height = H * sc;
+      const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); g.scale(sc, sc); g.drawImage(img, 0, 0);
+      return await new Promise(r => cv.toBlob(r, 'image/png'));
+    } finally { host.remove(); }
+  }
+  const tkKey = c => [c.no, c.status, c.balance, c.paid, JSON.stringify(c.data || {}).length].join('|');
+  function ticketReady(c) {
+    const k = tkKey(c); C.pic = C.pic || {};
+    if (C.pic.key === k && C.pic.p) return C.pic.p;
+    C.pic = { key: k, p: ticketBlob(c) }; C.pic.p.catch(() => { if (C.pic && C.pic.key === k) C.pic = null; });
+    return C.pic.p;
+  }
+  ACT.cfPic = async (d, btn) => {
+    const c = C.v; if (!c) return;
+    const lab = btn ? btn.textContent : ''; if (btn) { btn.disabled = true; btn.textContent = 'Preparing picture…'; }
+    try {
+      const blob = await ticketReady(c), file = new File([blob], (c.kind === 'Tailoring' ? 'sewing-order-' : 'repair-ticket-') + c.no + '.png', { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file] }); }
+        catch (e) { if (e && e.name === 'AbortError') return; if (e && e.name === 'NotAllowedError') { toast('Ticket picture is ready. Tap the button again to send it.'); return; } throw e; }
+      } else {
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = file.name; document.body.appendChild(a); a.click(); a.remove();
+        toast('Ticket picture saved. Attach it in WhatsApp.');
+        let n = String(c.phone || '').replace(/[^\d]/g, ''); if (n.startsWith('0')) n = '233' + n.slice(1);
+        if (n) setTimeout(() => window.open('https://wa.me/' + n, '_blank', 'noopener'), 900);
+      }
+    } catch (e) { toast('Could not make the picture on this phone'); }
+    finally { if (btn) { btn.disabled = false; btn.textContent = lab; } }
+  };
   ACT.cfWa = () => { const c = C.v, d = c.data; wa(c.phone, [bizName() + ' - ' + (c.kind === 'Tailoring' ? 'sewing order' : 'repair ticket') + ' ' + c.no, 'Customer: ' + c.customer, (c.kind === 'Tailoring' ? 'Garment: ' : 'Item: ') + c.item, d.problem ? 'Problem: ' + d.problem : '', d.imei ? 'IMEI/serial: ' + d.imei : '', d.accessories ? 'Left with us: ' + d.accessories : '', 'Ready by: ' + (c.due || 'we will call you'), c.price ? 'Total: ' + money(c.price) + (c.paid ? '\nPaid: ' + money(c.paid) : '') + '\nBalance: ' + money(Math.max(0, c.balance)) : '', '', 'Bring this ticket number when you come.', POWERED].filter(x => x !== '').join('\n')); };
   ACT.cfPrint = () => {
     let host = $('#printdoc'); if (host) host.remove(); host = document.createElement('div'); host.id = 'printdoc'; host.innerHTML = ticketHTML(C.v, false); document.body.appendChild(host);

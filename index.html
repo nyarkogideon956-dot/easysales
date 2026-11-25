@@ -691,7 +691,7 @@ function receiptSheet(b, fresh) {
   const bal = r2(b.total - b.cash - b.momo), cu = derived().customers.find(c => kk(c.name) === kk(b.customer));
   const paidAmt = r2(b.cash + b.momo), stamp = bal <= 0.004 ? ['paid', 'PAID'] : paidAmt > 0 ? ['part', 'PART PAID'] : ['unpaid', 'UNPAID'];
   sheet('<h2>' + (fresh ? '✓ Sale saved' : 'Receipt') + '</h2><div class="receipt"><div class="stamp ' + stamp[0] + '">' + stamp[1] + '</div><div class="rhead"><img src="' + logoSrc() + '" alt=""><div><b>' + esc(bizName()) + '</b>' + ([cfg().phone, cfg().phone2].filter(Boolean).length ? '<div class="small muted">' + esc([cfg().phone, cfg().phone2].filter(Boolean).join(' / ')) + '</div>' : '') + '</div></div><div class="muted small">' + esc(b.customer) + ' · ' + esc(b.date || '') + ' ' + esc(String(b.time || '').slice(0, 5)) + '</div><hr>' +
-    b.items.map(i => '<div class="l"><span>' + i.q + ' × ' + esc(lineName(i)) + '</span><span>' + money(i.q * i.u) + '</span></div>').join('') + '<hr>' +
+    b.items.map(i => '<div class="l"><span>' + esc(lineName(i)) + '<br><small style="opacity:.7">' + i.q + ' × ' + money(i.u) + '</small></span><span>' + money(i.q * i.u) + '</span></div>').join('') + '<hr>' +
     '<div class="l tot"><span>Total</span><span>' + money(b.total) + '</span></div>' +
     (b.cash ? '<div class="l"><span>Cash</span><span>' + money(b.cash) + '</span></div>' : '') + (b.momo ? '<div class="l"><span>MoMo</span><span>' + money(b.momo) + '</span></div>' : '') +
     (bal > 0.004 ? '<div class="l red"><b>Balance owed</b><b>' + money(bal) + '</b></div>' : '<div class="l green"><b>Fully paid</b></div>') +
@@ -700,7 +700,8 @@ function receiptSheet(b, fresh) {
     '<button class="btn primary block" data-act="shareimg" style="margin:8px 0;background:#16A34A;border-color:#16A34A">Send receipt picture on WhatsApp</button>' +
     '<button class="btn block" data-act="rcptChat" style="margin-bottom:6px">Number not saved? Open chat and attach the picture</button>' +
     '<p class="small muted" style="margin:0 0 8px">When you share a picture, WhatsApp only lists saved contacts and recent chats. If the number is not saved, use the second button: it saves the picture and opens the chat, then you tap the paperclip and choose the picture.</p>' +
-    '<div class="row"><button class="btn violet grow" data-act="rcptText">Text only</button><button class="btn grow" data-act="close">' + (fresh ? 'New sale' : 'Close') + '</button></div>');
+    (bal > 0.004 && b.customer && kk(b.customer) !== kk(WALKIN) ? '<button class="btn block" style="margin-bottom:6px" data-act="collect" data-n="' + esc(b.customer) + '">Collect payment now</button>' : '') +
+'<div class="row"><button class="btn violet grow" data-act="rcptText">Text only</button><button class="btn grow" data-act="close">' + (fresh ? 'New sale' : 'Close') + '</button></div>');
   rcptBlob(b).catch(() => {});
 }
 // draws the receipt as a picture (logo, items, PAID / PART PAID stamp, MoMo details) and shares it, e.g. to WhatsApp
@@ -708,8 +709,8 @@ function loadImg(src) { return new Promise(res => { const i = new Image(); i.onl
 async function receiptImage(b) {
   const c = cfg(), W = 720, pad = 40, c1 = c.c1 || '#7A1F3D';
   const total = b.total, paidAmt = r2(b.cash + b.momo), bal = r2(total - paidAmt);
-  const lines = b.items.length, extra = (c.momo ? 2 : 0) + (c.bank ? 1 : 0);
-  const H = 300 + lines * 44 + 170 + extra * 36 + 130;
+  const lines = b.items.length, extra = bal > 0.004 ? (c.momo ? 2 : 0) + (c.bank ? 2 : 0) : 0;
+  const H = 300 + lines * 74 + 170 + extra * 36 + 130;
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const g = cv.getContext('2d'), F = s => s + 'px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
   g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
@@ -724,7 +725,7 @@ async function receiptImage(b) {
   y += 38; g.fillStyle = '#241B2F'; g.font = F(24); g.fillText('Customer: ' + String(b.customer).slice(0, 34), pad, y);
   y += 22; g.strokeStyle = '#E4DDEB'; g.lineWidth = 2; g.beginPath(); g.moveTo(pad, y); g.lineTo(W - pad, y); g.stroke();
   g.font = F(24);
-  b.items.forEach(i => { y += 44; g.fillStyle = '#241B2F'; g.textAlign = 'left'; g.fillText((i.q + ' × ' + lineName(i)).slice(0, 40), pad, y); g.textAlign = 'right'; g.fillText(money(i.q * i.u), W - pad, y); });
+  b.items.forEach(i => { y += 44; g.fillStyle = '#241B2F'; g.font = F(24); g.textAlign = 'left'; g.fillText(lineName(i).slice(0, 34), pad, y); g.textAlign = 'right'; g.fillText(money(i.q * i.u), W - pad, y); y += 28; g.font = F(20); g.fillStyle = '#6E6479'; g.textAlign = 'left'; g.fillText(i.q + ' × ' + money(i.u), pad, y); });
   y += 26; g.beginPath(); g.moveTo(pad, y); g.lineTo(W - pad, y); g.stroke();
   const row = (label, val, bold, color) => { y += 42; g.font = F((bold ? 'bold ' : '') + (bold ? 28 : 24)); g.fillStyle = color || '#241B2F'; g.textAlign = 'left'; g.fillText(label, pad, y); g.textAlign = 'right'; g.fillText(val, W - pad, y); };
   row('Total', money(total), true);
@@ -732,8 +733,8 @@ async function receiptImage(b) {
   if (!b.cash && !b.momo) row('Paid', money(0));
   if (bal > 0.004) row('Balance owed', money(bal), true, '#B3261E');
   g.textAlign = 'left'; g.font = F(22); g.fillStyle = '#6E6479';
-  if (c.momo) { y += 50; g.fillText('Pay by MoMo: ' + c.momo, pad, y); if (c.momoName) { y += 32; g.fillText('Name: ' + c.momoName, pad, y); } }
-  if (c.bank) { y += 34; g.fillText(String(c.bank).slice(0, 52), pad, y); }
+  if (bal > 0.004 && c.momo) { y += 50; g.fillText('Pay by MoMo: ' + c.momo, pad, y); if (c.momoName) { y += 32; g.fillText('Name: ' + c.momoName, pad, y); } }
+  if (bal > 0.004 && c.bank) { const bp = String(c.bank).split(' · '); let ln = ''; const out = []; bp.forEach(x => { if (ln && (ln + ' · ' + x).length > 44) { out.push(ln); ln = x; } else ln = ln ? ln + ' · ' + x : x; }); if (ln) out.push(ln); out.slice(0, 3).forEach((t, k) => { y += k ? 32 : 34; g.fillText(t, pad, y); }); }
   y += 54; g.textAlign = 'center'; g.fillStyle = c1; g.font = F('italic 24'); g.fillText(String(c.note || 'Thank you for your business').slice(0, 48), W / 2, y);
   y += 40; g.fillStyle = '#9A90A6'; g.font = F(18); g.fillText('Powered by EasySales · 020 320 7240', W / 2, y);
   // the stamp
@@ -820,7 +821,7 @@ function renderCustList() {
       (c.balance > 0.004 ? '<span class="amt red">' + money(c.balance) + '</span>' : c.balance != null ? '<span class="badge green">clear</span>' : '') + '</button>').join('') + '</div>' : '<div class="empty">No customers here yet.</div>');
 }
 function customerSheet(name) {
-  const c = derived().customers.find(x => kk(x.name) === kk(name)); if (!c) return;
+  const c = derived().customers.find(x => kk(x.name) === kk(name)); if (!c) { toast('Could not open this customer. Go to Customers and try again.'); return; }
   const known = c.balance != null;
   sheet('<h2>' + esc(c.name) + '</h2><p class="muted small" style="margin:0 0 8px">' + esc([c.location, c.phone, 'Sales person: ' + c.person].filter(Boolean).join(' · ')) + '</p>' +
     (known ? '<div class="stats"><div class="stat"><span>Owes</span><b class="' + (c.balance > 0.004 ? 'red' : 'green') + '">' + money(Math.max(0, c.balance)) + '</b></div><div class="stat"><span>Last bought</span><b style="font-size:17px">' + esc(c.last || '-') + '</b></div></div><br>' : '') +

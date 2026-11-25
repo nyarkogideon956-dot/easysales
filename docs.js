@@ -342,9 +342,9 @@
     types.forEach(t => {
       const idx = e.items.findIndex(i => i.l && kk(i.p) === kk(t.nm)), it = idx >= 0 ? e.items[idx] : null;
       h += '<div style="padding:6px 0;border-bottom:1px solid var(--line)"><label style="margin:0;display:flex;align-items:center;gap:8px;font-weight:600"><input data-lb="' + esc(t.key) + '" type="checkbox" style="width:auto;min-height:0"' + (it ? ' checked' : '') + '> ' + esc(t.nm) + '</label>' +
-        (it ? '<div class="row" style="margin-top:6px;gap:8px">' + (it.un === 'lump' ? '' : '<div class="grow"><label style="margin:0">Area / qty (' + esc(it.un || t.un) + ')</label><input data-di="q" data-n="' + idx + '" type="number" inputmode="decimal" value="' + esc(it.q) + '" placeholder="0"></div>') +
-          '<div class="grow"><label style="margin:0">' + (it.un === 'lump' ? 'Amount (GH₵)' : 'Rate (GH₵)') + '</label><input data-di="u" data-n="' + idx + '" type="number" inputmode="decimal" value="' + esc(it.u) + '" placeholder="0"></div></div>' +
-          '<label style="margin:6px 0 0;display:flex;align-items:center;gap:8px;font-size:13px"><input data-lump="' + esc(t.key) + '" type="checkbox" style="width:auto;min-height:0"' + (it.un === 'lump' ? ' checked' : '') + '> One price for the whole job (not per ' + esc(t.un) + ')</label>' : '') + '</div>';
+        (it ? '<label style="margin:8px 0 0">How do you charge it?</label><select data-lump="' + esc(t.key) + '"><option value="">Per ' + esc(t.un) + ' (area × rate)</option><option value="1"' + (it.un === 'lump' ? ' selected' : '') + '>One price for the whole job</option></select>' +
+          '<div class="row" style="margin-top:6px;gap:8px">' + (it.un === 'lump' ? '' : '<div class="grow"><label style="margin:0">Area / qty (' + esc(it.un || t.un) + ')</label><input data-di="q" data-n="' + idx + '" type="number" inputmode="decimal" value="' + esc(it.q) + '" placeholder="0"></div>') +
+          '<div class="grow"><label style="margin:0">' + (it.un === 'lump' ? 'Amount (GH₵)' : 'Rate (GH₵)') + '</label><input data-di="u" data-n="' + idx + '" type="number" inputmode="decimal" value="' + esc(it.u) + '" placeholder="0"></div></div>' : '') + '</div>';
     });
     e.items.forEach((i, n) => {   // other labour lines, for example ones typed by hand
       if (!i.l || names.indexOf(kk(i.p)) >= 0) return;
@@ -361,7 +361,7 @@
     const t = ev.target; if (!D.edit || !t.dataset) return;
     if (t.dataset.lump !== undefined) {
       readEdit(); const ty2 = labTypes().find(x => x.key === t.dataset.lump); const ix = ty2 ? D.edit.items.findIndex(x => x.l && kk(x.p) === kk(ty2.nm)) : -1;
-      if (ix >= 0) { if (t.checked) { D.edit.items[ix].un = 'lump'; D.edit.items[ix].q = 1; D.edit.items[ix].u = ''; } else { D.edit.items[ix].un = ty2.un; D.edit.items[ix].q = ''; D.edit.items[ix].u = ty2.rate || ''; } labRefresh(); }
+      if (ix >= 0) { if (t.value === '1') { D.edit.items[ix].un = 'lump'; D.edit.items[ix].q = 1; D.edit.items[ix].u = ''; } else { D.edit.items[ix].un = ty2.un; D.edit.items[ix].q = ''; D.edit.items[ix].u = ty2.rate || ''; } labRefresh(); }
       return;
     }
     if (t.dataset.lb === undefined) return;
@@ -406,15 +406,18 @@
   ACT.dBack = () => editSheet();
   ACT.dSave = async (d, btn) => {
     const e = D.edit; if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    let iv; const t0 = Date.now();
     try {
+      if (btn) iv = setInterval(() => { btn.textContent = 'Saving… ' + Math.round((Date.now() - t0) / 1000) + 's'; }, 1000);
       const r = await api('docs', { op: 'save', type: e.type, no: e.no, customer: e.customer, phone: e.phone, location: e.location, title: e.title, from: e.from, items: e.items, terms: e.terms, note: e.note, vehicle: e.vehicle, driver: e.driver, dest: e.dest, rooms: e.rooms, scope: scopeOut(e), cash: +e.cash || 0, momo: +e.momo || 0, trans: +e.trans || 0, disc: +e.disc || 0, discPct: e.discPct, tax: e.tax, clientMat: e.clientMat });
+      clearInterval(iv);
       if (!r.ok) { toast(errText(r.error)); if (btn) { btn.disabled = false; btn.textContent = 'Confirm and save'; } return; }
       { const so = scopeOut(e); ppSaveLocal(r.doc.no, so && so.pplan ? so.pplan : null); }
-      toast(T[e.type] + ' ' + r.doc.no + ' saved'); D.edit = null; D.type = r.doc.type;
+      toast(T[e.type] + ' ' + r.doc.no + ' saved' + (Date.now() - t0 > 5000 ? ' (server took ' + Math.round((Date.now() - t0) / 1000) + 's)' : '')); D.edit = null; D.type = r.doc.type;
       D.list = (D.list || []).filter(x => x.no !== r.doc.no); D.list.unshift(r.doc);   // show the saved document at once; the list refreshes behind it
       viewSheet(r.doc); loadDocs().catch(() => {});
       if (e.type === 'INV') KL.refreshCache();
-    } catch (err) { toast('Needs internet to save'); if (btn) { btn.disabled = false; btn.textContent = 'Confirm and save'; } }
+    } catch (err) { clearInterval(iv); toast('Needs internet to save'); if (btn) { btn.disabled = false; btn.textContent = 'Confirm and save'; } }
   };
 
   /* ---------- payments, status, delete ---------- */
