@@ -285,7 +285,8 @@ const S = {
 
 function loadCart() { try { const c = JSON.parse(localStorage.getItem(LS('cart'))); if (c && Array.isArray(c.lines)) S.cart = c; } catch (e) { /* ignore */ } }
 function saveCart() { try { localStorage.setItem(LS('cart'), JSON.stringify(S.cart)); } catch (e) { /* ignore */ } }
-function clearCart() { S.cart = { customer: null, lines: [], mode: 'cash', cash: '', momo: '', trans: '', disc: '', discPct: false }; saveCart(); }
+function clearCart() { S.cart = { customer: null, lines: [], mode: 'cash', cash: '', momo: '', trans: '', disc: '', discPct: false, date: '' }; saveCart(); }
+document.addEventListener('change', ev => { if (ev.target && ev.target.id === 'sdate' && S.session && S.session.role === 'admin') { S.cart.date = ev.target.value && ev.target.value <= today() ? ev.target.value : ''; saveCart(); render(); } });
 
 /* ---------------- network ---------------- */
 async function api(action, body) {
@@ -587,7 +588,9 @@ function sellHTML() {
   const cu = cust && d.customers.find(x => kk(x.name) === kk(cust));
   let h = '<div class="card"><button class="pick" data-act="pickcust"><span class="muted">Customer</span><b>' + esc(cust || 'Choose customer') + '</b></button>' +
     (cu && cu.balance > 0 ? '<p class="small red" style="margin:8px 0 0">Owes ' + money(cu.balance) + ' already</p>' : '') +
-    (wsShop() ? '<div class="seg" style="margin-top:10px"><button class="' + (c.ws ? '' : 'on') + '" data-act="wsmode" data-w="0">Retail</button><button class="' + (c.ws ? 'on' : '') + '" data-act="wsmode" data-w="1">Wholesale</button></div>' : '') + '</div>';
+    (d.customers.some(x => x.balance > 0.004) ? '<button class="btn sm block" data-act="owing" style="margin-top:8px">Customers who owe (' + d.customers.filter(x => x.balance > 0.004).length + ') · collect payment</button>' : '') +
+    (wsShop() ? '<div class="seg" style="margin-top:10px"><button class="' + (c.ws ? '' : 'on') + '" data-act="wsmode" data-w="0">Retail</button><button class="' + (c.ws ? 'on' : '') + '" data-act="wsmode" data-w="1">Wholesale</button></div>' : '') +
+    (S.session.role === 'admin' ? '<label style="margin:10px 0 0;font-size:13px">Sale date (change it to record an older sale)</label><input id="sdate" type="date" value="' + esc(c.date && c.date <= today() ? c.date : today()) + '" max="' + today() + '">' + (c.date && c.date < today() ? '<p class="small red" style="margin:4px 0 0">This sale will be recorded on ' + esc(c.date) + '.</p>' : '') : '') + '</div>';
   if (!prods.length) h += '<div class="empty">No ' + word(1) + ' yet.<br>' + (S.session.role === 'admin' ? 'Add them in Setup.' : 'Connect to the internet once to load them.') + '</div>';
   const cats = Array.from(new Set(prods.map(p => p.cat).filter(Boolean))).sort((a, b) => a.localeCompare(b));
   if (S.pcat && !cats.includes(S.pcat)) S.pcat = '';
@@ -667,7 +670,7 @@ async function saveSale() {
   const bal = r2(t - p.cash - p.momo);
   if (bal < -0.004) { toast('Paid is more than the total'); return; }
   if (bal > 0.004 && kk(c.customer) === kk(WALKIN)) { toast('Credit needs a named customer'); pickCustomerSheet(); return; }
-  const op = { type: 'sale', id: uid('B'), ts: Date.now(), date: today(), time: nowTime(), customer: c.customer, items: c.lines.map(l => l.per > 1 ? ({ p: l.p, q: l.q, u: l.u, per: l.per, un: l.un }) : ({ p: l.p, q: l.q, u: l.u })).concat(extraLines()), cash: p.cash, momo: p.momo, person: S.session.name };
+  const op = { type: 'sale', id: uid('B'), ts: Date.now(), date: (S.session.role === 'admin' && c.date && c.date <= today()) ? c.date : today(), time: nowTime(), customer: c.customer, items: c.lines.map(l => l.per > 1 ? ({ p: l.p, q: l.q, u: l.u, per: l.per, un: l.un }) : ({ p: l.p, q: l.q, u: l.u })).concat(extraLines()), cash: p.cash, momo: p.momo, person: S.session.name };
   S.queue.push(op); await putOne('queue', op);
   clearCart(); render(); syncSoon();
   receiptSheet({ id: op.id, time: op.time, date: op.date, customer: op.customer, items: op.items, total: t, cash: p.cash, momo: p.momo }, true);
@@ -678,7 +681,7 @@ function receiptText(b) {
   const bal = r2(b.total - b.cash - b.momo);
   return [biz + ' receipt', (b.date || today()) + ' ' + String(b.time || '').slice(0, 5), 'Customer: ' + b.customer, ''].concat(lines, ['',
     'Total: ' + money(b.total), 'Paid: ' + money(b.cash + b.momo) + (b.momo ? ' (MoMo ' + money(b.momo) + ')' : ''),
-    bal > 0.004 ? 'Balance owed: ' + money(bal) : 'Fully paid'].concat(cfg().momo ? ['', 'Pay by MoMo: ' + cfg().momo + (cfg().momoName ? ' (' + cfg().momoName + ')' : '')] : [], ['', cfg().note || 'Thank you!', '', 'Powered by EasySales · 020 320 7240'])).join('\n');
+    bal > 0.004 ? 'Balance owed: ' + money(bal) : 'Fully paid'].concat(bal > 0.004 && cfg().momo ? ['', 'Pay by MoMo: ' + cfg().momo + (cfg().momoName ? ' (' + cfg().momoName + ')' : '')] : [], ['', cfg().note || 'Thank you!', '', 'Powered by EasySales · 020 320 7240'])).join('\n');
 }
 function waLink(phone, text) {
   let n = String(phone || '').replace(/[^\d]/g, '');
@@ -686,6 +689,12 @@ function waLink(phone, text) {
   return 'https://wa.me/' + n + '?text=' + encodeURIComponent(text);
 }
 let _receipt;
+function owingSheet() {
+  const list = derived().customers.filter(c => c.balance != null && c.balance > 0.004).sort((a, b) => b.balance - a.balance);
+  sheet('<h2>Customers who owe</h2>' + (list.length ? '<p class="muted" style="margin-top:0">Tap a name to collect. Total owed ' + money(sum(list, c => c.balance)) + '</p><div style="max-height:56vh;overflow:auto">' +
+    list.map(c => '<button class="btn block" style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;text-align:left" data-act="collect" data-n="' + esc(c.name) + '"><span><b>' + esc(c.name) + '</b>' + (c.phone ? '<br><span class="small muted">' + esc(c.phone) + '</span>' : '') + '</span><b class="red">' + money(c.balance) + '</b></button>').join('') + '</div>' : '<div class="empty">Nobody owes right now.</div>') +
+    '<button class="btn block" style="margin-top:10px" data-act="close">Close</button>');
+}
 function receiptSheet(b, fresh) {
   _receipt = b;
   const bal = r2(b.total - b.cash - b.momo), cu = derived().customers.find(c => kk(c.name) === kk(b.customer));
@@ -698,11 +707,12 @@ function receiptSheet(b, fresh) {
     (cu && cu.balance > 0.004 && bal > 0.004 ? '<div class="small muted">Total owed by this customer: ' + money(cu.balance) + '</div>' : '') + '</div><br>' +
     '<label>Customer WhatsApp number</label><input id="rwp" inputmode="tel" value="' + esc((cu && cu.phone) || '') + '" placeholder="Example: 0241234567">' +
     '<button class="btn primary block" data-act="shareimg" style="margin:8px 0;background:#16A34A;border-color:#16A34A">Send receipt picture on WhatsApp</button>' +
-    '<button class="btn block" data-act="rcptChat" style="margin-bottom:6px">Number not saved? Open chat and attach the picture</button>' +
+    '<button class="btn block" data-act="sharepdf" style="margin-bottom:6px;border-color:#16A34A;color:#16A34A">Send receipt PDF on WhatsApp</button>' +
+'<button class="btn block" data-act="rcptChat" style="margin-bottom:6px">Number not saved? Open chat and attach the picture</button>' +
     '<p class="small muted" style="margin:0 0 8px">When you share a picture, WhatsApp only lists saved contacts and recent chats. If the number is not saved, use the second button: it saves the picture and opens the chat, then you tap the paperclip and choose the picture.</p>' +
     (bal > 0.004 && b.customer && kk(b.customer) !== kk(WALKIN) ? '<button class="btn block" style="margin-bottom:6px" data-act="collect" data-n="' + esc(b.customer) + '">Collect payment now</button>' : '') +
 '<div class="row"><button class="btn violet grow" data-act="rcptText">Text only</button><button class="btn grow" data-act="close">' + (fresh ? 'New sale' : 'Close') + '</button></div>');
-  rcptBlob(b).catch(() => {});
+  rcptBlob(b).then(() => rcptPdfFile(b)).catch(() => {});
 }
 // draws the receipt as a picture (logo, items, PAID / PART PAID stamp, MoMo details) and shares it, e.g. to WhatsApp
 function loadImg(src) { return new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; }); }
@@ -742,6 +752,42 @@ async function receiptImage(b) {
   g.save(); g.translate(W / 2, 300 + lines * 22); g.rotate(-0.3); g.globalAlpha = 0.22; g.strokeStyle = st[1]; g.fillStyle = st[1]; g.lineWidth = 8;
   g.font = F('bold 88'); const tw = g.measureText(st[0]).width; g.strokeRect(-tw / 2 - 26, -78, tw + 52, 110); g.textAlign = 'center'; g.fillText(st[0], 0, 4); g.restore();
   return new Promise(res => cv.toBlob(res, 'image/png'));
+}
+function pdfOneJpeg(bytes, w, h) {
+  const W = 340, H = Math.round(W * h / w), enc = x => new TextEncoder().encode(x), parts = [], offs = []; let len = 0;
+  const put = d => { const b = typeof d === 'string' ? enc(d) : d; parts.push(b); len += b.length; };
+  const obj = (n, d) => { offs[n] = len; put(n + ' 0 obj\n' + d + '\nendobj\n'); };
+  put('%PDF-1.4\n');
+  obj(1, '<< /Type /Catalog /Pages 2 0 R >>'); obj(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
+  obj(3, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + W + ' ' + H + '] /Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R >>');
+  const c = enc('q ' + W + ' 0 0 ' + H + ' 0 0 cm /Im0 Do Q'); offs[4] = len; put('4 0 obj\n<< /Length ' + c.length + ' >>\nstream\n'); put(c); put('\nendstream\nendobj\n');
+  offs[5] = len; put('5 0 obj\n<< /Type /XObject /Subtype /Image /Width ' + w + ' /Height ' + h + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + bytes.length + ' >>\nstream\n'); put(bytes); put('\nendstream\nendobj\n');
+  const xr = len; put('xref\n0 6\n0000000000 65535 f \n'); for (let n = 1; n <= 5; n++) put(String(offs[n]).padStart(10, '0') + ' 00000 n \n');
+  put('trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n' + xr + '\n%%EOF');
+  return new Blob(parts, { type: 'application/pdf' });
+}
+let _rcptPdf = null, _rcptPdfKey = '';
+async function rcptPdfFile(b) {
+  const k = rcptKey(b); if (_rcptPdf && _rcptPdfKey === k) return _rcptPdf;
+  const png = await rcptBlob(b), bmp = await createImageBitmap(png), cv = document.createElement('canvas'); cv.width = bmp.width; cv.height = bmp.height;
+  const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); g.drawImage(bmp, 0, 0);
+  const jb = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.9)), bytes = new Uint8Array(await jb.arrayBuffer());
+  const f = new File([pdfOneJpeg(bytes, cv.width, cv.height)], 'Receipt-' + String(b.customer || 'customer').replace(/[^A-Za-z0-9]+/g, '-').slice(0, 20) + '-' + (b.date || today()) + '.pdf', { type: 'application/pdf' });
+  _rcptPdf = f; _rcptPdfKey = k; return f;
+}
+async function shareReceiptPdf(b, btn) {
+  const lab = btn ? btn.textContent : ''; if (btn) { btn.disabled = true; btn.textContent = 'Preparing PDF…'; }
+  try {
+    const file = await rcptPdfFile(b);
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: 'Receipt' }); }
+      catch (e) { if (e && e.name === 'AbortError') return; if (e && e.name === 'NotAllowedError') { toast('PDF is ready. Tap the button again to send it.'); return; } throw e; }
+    } else {
+      const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; document.body.appendChild(a); a.click(); a.remove();
+      toast('PDF saved. Attach it in WhatsApp.');
+    }
+  } catch (e) { toast('Could not make the PDF on this phone'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = lab; } }
 }
 let _rcptBlob = null, _rcptKey = '';
 const rcptKey = b => JSON.stringify([b.date, b.time, b.customer, b.total, b.cash, b.momo, (b.items || []).length]);
@@ -1034,6 +1080,8 @@ const ACT = {
   editprod: d => editProdSheet(d.n),
   pcat: d => { S.pcat = d.c; render(true); },
   shareimg: () => { if (_receipt) shareReceipt(_receipt); },
+  owing: () => owingSheet(),
+  sharepdf: (d, btn) => { if (_receipt) shareReceiptPdf(_receipt, btn); },
   rmphoto: () => { S.newPhoto = ''; const i = $('#eimg'); if (i) i.src = logoSrc(); toast('Picture will be removed when you save'); },
   editbiz: () => editBizSheet(),
   savebiz: async () => {

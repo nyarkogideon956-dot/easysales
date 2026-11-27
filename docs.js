@@ -28,7 +28,7 @@
     if (S.tab === 'setup' && !document.getElementById('xdocset')) {
       // only show these when the shop has estimates / the estimator switched on
       const hm = x => !KL.hasMod || KL.hasMod(x);
-      const bt = (hm('est') ? '<button class="btn sm grow" data-act="dRules">Estimator rules</button>' : '') + (hm('docs') ? '<button class="btn sm grow" data-act="dSettings">Document settings</button>' : '');
+      const bt = (hm('est') ? '<button class="btn sm grow" data-act="dRules">Estimator rules</button>' : '') + (hm('docs') ? '<button class="btn sm grow" data-act="dJobPrices">Job prices</button><button class="btn sm grow" data-act="dSettings">Document settings</button>' : '');
       if (bt) m.insertAdjacentHTML('afterbegin', '<div id="xdocset" class="row" style="gap:8px;margin-top:6px">' + bt + '</div>');
     }
   });
@@ -37,9 +37,10 @@
 
   async function loadDocs() {
     if (!D.list) { try { D.list = await KL.kvGet('docs'); } catch (e) { /* ignore */ } if (D.list && S.tab === 'docs') render(true); }
+    if (!D.jp) { try { D.jp = (await KL.kvGet('docjp')) || {}; } catch (e) { D.jp = {}; } }
     if (!navigator.onLine) return;
     D.loading = true;
-    try { const r = await api('docs', { op: 'list' }); if (r.ok) { D.list = r.docs; KL.kvSet('docs', r.docs).catch(() => {}); } else toast(errText(r.error)); } catch (e) { /* offline */ }
+    try { const r = await api('docs', { op: 'list' }); if (r.ok) { D.list = r.docs; KL.kvSet('docs', r.docs).catch(() => {}); if (r.jp) { D.jp = r.jp; KL.kvSet('docjp', r.jp).catch(() => {}); } } else toast(errText(r.error)); } catch (e) { /* offline */ }
     D.loading = false; if (S.tab === 'docs') render(true);
   }
 
@@ -252,13 +253,17 @@
 
   function adjOf(v) { const a = (v.data && v.data.adj) || {}; return { trans: a.trans || '', disc: a.disc || '', discPct: !!a.discPct, tax: !!a.tax, clientMat: !!a.clientMat }; }
   function products() { return ((S.lists && S.lists.products) || (S.cache && S.cache.products) || []); }
-  function priceOf(name) { const p = products().find(x => kk(x.name) === kk(name)); return p ? p.price : null; }
+  function priceOf(name) {
+    const p = products().find(x => kk(x.name) === kk(name));
+    if (D.edit && (D.edit.type === 'EST' || D.edit.type === 'PF') && D.jp) { const k = Object.keys(D.jp).find(x => kk(x) === kk(name)); if (k && D.jp[k] > 0) return D.jp[k]; }
+    return p ? p.price : null;
+  }
 
   function editSheet() {
     const e = D.edit, wb = e.type === 'WB', showLab = build() && !wb, custs = KL.derived().customers.filter(c => kk(c.name) !== kk(KL.WALKIN));
     sheet('<h2>' + (e.no ? 'Edit ' + esc(e.no) : 'New ' + T[e.type].toLowerCase()) + '</h2>' +
       (e.from ? '<p class="small muted" style="margin:0">From ' + esc(e.from) + '</p>' : '') +
-      '<label>Customer</label><input id="dc" list="dcl" value="' + esc(e.customer) + '" autocomplete="off" placeholder="Name"><datalist id="dcl">' + custs.map(c => '<option value="' + esc(c.name) + '">').join('') + '</datalist>' +
+      (!e.no ? '<label>Date</label><input id="ddate" type="date" value="' + esc(e.date || today()) + '" max="' + today() + '">' : '') + '<label>Customer</label><input id="dc" list="dcl" value="' + esc(e.customer) + '" autocomplete="off" placeholder="Name"><datalist id="dcl">' + custs.map(c => '<option value="' + esc(c.name) + '">').join('') + '</datalist>' +
       '<div class="picker"><div><label>Phone</label><input id="dp" inputmode="tel" value="' + esc(e.phone) + '"></div><div><label>' + (wb ? 'Deliver to' : 'Location') + '</label><input id="dl" value="' + esc(wb ? (e.dest || e.location) : e.location) + '"></div></div>' +
       (wb ? '' : '<label>Job / title (optional)</label><input id="dt" value="' + esc(e.title) + '" placeholder="Example: 3 rooms plasterboard ceiling">') +
       '<h3 style="margin:14px 0 4px">Items</h3><datalist id="dpl">' + products().map(p => '<option value="' + esc(p.name) + '">').join('') + '</datalist>' +
@@ -298,7 +303,7 @@
   }
   function readEdit() {
     const e = D.edit; if (!e || !$('#dc')) return;
-    e.customer = $('#dc').value.trim(); e.phone = $('#dp').value.trim();
+    e.customer = $('#dc').value.trim(); e.phone = $('#dp').value.trim(); if ($('#ddate') && $('#ddate').value) e.date = $('#ddate').value <= today() ? $('#ddate').value : today();
     if (e.type === 'WB') e.dest = $('#dl').value.trim(); else e.location = $('#dl').value.trim();
     if ($('#dt')) e.title = $('#dt').value.trim();
     if ($('#dv')) e.vehicle = $('#dv').value.trim(); if ($('#dd')) e.driver = $('#dd').value.trim();
@@ -399,7 +404,7 @@
     if (e.items.some(i => !(+i.q > 0) || (e.type !== 'WB' && !(+i.u >= 0)))) { toast('Check quantities and prices'); editSheet(); return; }
     const total = e.type === 'WB' ? 0 : docMoney(e.items, e).total, paid = r2((+e.cash || 0) + (+e.momo || 0));
     if (e.type === 'INV' && paid > total + 0.001) { toast('Paid is more than the total'); editSheet(); return; }
-    const doc = { type: e.type, no: e.no || 'New', date: today(), customer: e.customer, phone: e.phone, location: e.location, title: e.title, from: e.from, paid, data: { items: e.items, terms: e.terms, note: e.note, vehicle: e.vehicle, driver: e.driver, dest: e.dest, rooms: e.rooms, scope: scopeOut(e), adj: { trans: +e.trans || 0, disc: +e.disc || 0, discPct: e.discPct, tax: e.tax, clientMat: e.clientMat } } };
+    const doc = { type: e.type, no: e.no || 'New', date: e.date || today(), customer: e.customer, phone: e.phone, location: e.location, title: e.title, from: e.from, paid, data: { items: e.items, terms: e.terms, note: e.note, vehicle: e.vehicle, driver: e.driver, dest: e.dest, rooms: e.rooms, scope: scopeOut(e), adj: { trans: +e.trans || 0, disc: +e.disc || 0, discPct: e.discPct, tax: e.tax, clientMat: e.clientMat } } };
     sheet('<h2>Check before saving</h2><p class="small muted" style="margin-top:0">This is exactly what your customer will see.</p>' + paperHTML(doc, true) +
       '<div class="row" style="margin-top:12px"><button class="btn grow" data-act="dBack">Edit</button><button class="btn primary grow" data-act="dSave">Confirm and save</button></div>');
   };
@@ -409,7 +414,7 @@
     let iv; const t0 = Date.now();
     try {
       if (btn) iv = setInterval(() => { btn.textContent = 'Saving… ' + Math.round((Date.now() - t0) / 1000) + 's'; }, 1000);
-      const r = await api('docs', { op: 'save', type: e.type, no: e.no, customer: e.customer, phone: e.phone, location: e.location, title: e.title, from: e.from, items: e.items, terms: e.terms, note: e.note, vehicle: e.vehicle, driver: e.driver, dest: e.dest, rooms: e.rooms, scope: scopeOut(e), cash: +e.cash || 0, momo: +e.momo || 0, trans: +e.trans || 0, disc: +e.disc || 0, discPct: e.discPct, tax: e.tax, clientMat: e.clientMat });
+      const r = await api('docs', { op: 'save', type: e.type, no: e.no, date: e.no ? undefined : e.date, customer: e.customer, phone: e.phone, location: e.location, title: e.title, from: e.from, items: e.items, terms: e.terms, note: e.note, vehicle: e.vehicle, driver: e.driver, dest: e.dest, rooms: e.rooms, scope: scopeOut(e), cash: +e.cash || 0, momo: +e.momo || 0, trans: +e.trans || 0, disc: +e.disc || 0, discPct: e.discPct, tax: e.tax, clientMat: e.clientMat });
       clearInterval(iv);
       if (!r.ok) { toast(errText(r.error)); if (btn) { btn.disabled = false; btn.textContent = 'Confirm and save'; } return; }
       { const so = scopeOut(e); ppSaveLocal(r.doc.no, so && so.pplan ? so.pplan : null); }
@@ -810,6 +815,26 @@
     btn.disabled = true; btn.textContent = 'Saving…';
     try { const r = await api('docs', { op: 'rulesSet', values }); if (!r.ok) { toast(errText(r.error)); btn.disabled = false; return; } D.rules = r.rules; KL.kvSet('rules', r.rules).catch(() => {}); toast('Rules saved'); closeSheet(); } catch (e) { toast('Needs internet'); btn.disabled = false; }
   };
+  /* ---------- Job prices: the price you quote on estimates and pro formas (shop price stays for sales) ---------- */
+  ACT.dJobPrices = () => {
+    const list = products().slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    sheet('<h2>Job prices</h2><p class="small muted" style="margin-top:0">Type the price you quote for work. Estimates and pro formas use it. Sales keep the shop price. Leave it empty to use the shop price.</p>' +
+      '<input id="jps" placeholder="Search a product" style="margin-bottom:8px">' +
+      '<div id="jpl" style="max-height:52vh;overflow:auto">' + list.map(p => '<div class="row between jprow" data-n="' + esc(String(p.name).toLowerCase()) + '" style="gap:8px;padding:6px 0;border-bottom:1px solid var(--line)"><div class="grow"><b>' + esc(p.name) + '</b><div class="small muted">Shop price ' + N(p.price) + '</div></div><div style="width:110px"><input data-jp="' + esc(p.name) + '" data-old="' + esc((D.jp && D.jp[p.name]) || '') + '" type="number" inputmode="decimal" value="' + esc((D.jp && D.jp[p.name]) || '') + '" placeholder="Job price"></div></div>').join('') + '</div>' +
+      '<button class="btn primary block" style="margin-top:10px" data-act="dJpSave">Save job prices</button><button class="btn block" style="margin-top:6px" data-act="close">Close</button>');
+  };
+  document.addEventListener('input', ev => {
+    if (ev.target.id !== 'jps') return; const q = ev.target.value.trim().toLowerCase();
+    document.querySelectorAll('.jprow').forEach(r => { r.style.display = !q || r.dataset.n.indexOf(q) >= 0 ? '' : 'none'; });
+  });
+  ACT.dJpSave = async (d, btn) => {
+    const items = Array.from(document.querySelectorAll('[data-jp]')).filter(x => String(x.value) !== String(x.dataset.old)).map(x => ({ name: x.dataset.jp, price: +x.value || 0 }));
+    if (!items.length) { toast('Nothing changed'); return; }
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try { const r = await api('docs', { op: 'jpSet', items }); if (!r.ok) { toast(errText(r.error)); btn.disabled = false; btn.textContent = 'Save job prices'; return; } D.jp = r.jp || {}; KL.kvSet('docjp', D.jp).catch(() => {}); closeSheet(); toast('Job prices saved'); }
+    catch (e) { toast('Needs internet to save'); btn.disabled = false; btn.textContent = 'Save job prices'; }
+  };
+
   ACT.dSettings = () => {
     const c = cfg();
     sheet('<h2>Document settings</h2>' +
