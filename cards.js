@@ -5,7 +5,7 @@
   const { S, ACT, ICON, api, esc, money, r2, sum, kk, $, today, toast, sheet, closeSheet, errText, cfg, bizName } = KL;
   const render = k => KL.fn('render')(k);
   const POWERED = 'Powered by EasySales · 020 320 7240';
-  const C = { list: null, flow: { Repair: ['Received', 'Checking', 'Waiting for parts', 'Fixing', 'Ready', 'Collected', 'Cannot fix'], Tailoring: ['Received', 'Cutting', 'Sewing', 'Fitting', 'Ready', 'Collected'] }, f: 'open', q: '', e: null, v: null };
+  const C = { ph: {}, list: null, flow: { Repair: ['Received', 'Checking', 'Waiting for parts', 'Fixing', 'Ready', 'Collected', 'Cannot fix'], Tailoring: ['Received', 'Cutting', 'Sewing', 'Fitting', 'Ready', 'Collected'] }, f: 'open', q: '', e: null, v: null };
   Object.assign(KL.ERR, { set_price_first: 'Put the price first, then take the deposit.' });
   const on = () => KL.hasMod && KL.hasMod('cards');
   const kinds = () => { const k = cfg().cardKinds || 'Both'; return k === 'Repair' ? ['Repair'] : k === 'Tailoring' ? ['Tailoring'] : ['Repair', 'Tailoring']; };
@@ -33,11 +33,13 @@
   const _att = KL.moreAttention;
   KL.moreAttention = () => {
     const base = _att ? _att() : []; if (!on() || !C.list) return base;
-    C.list.filter(c => c.status === 'Ready').slice(0, 3).forEach(c => base.push({ k: 'cards', i: '✓', bg: '#ECFDF3', fg: '#166534', a: esc(c.customer) + ' · ' + esc(c.item), b: 'Ready, not collected · ' + esc(c.no), amt: c.balance > 0 ? money(c.balance) : 'paid', o: 1 }));
+    C.list.filter(c => c.status === 'Ready').sort((a, b) => readyDays(b) - readyDays(a)).slice(0, 5).forEach(c => base.push({ k: 'cards', i: readyDays(c) >= 3 ? '!' : '✓', bg: readyDays(c) >= 3 ? '#FFF7ED' : '#ECFDF3', fg: readyDays(c) >= 3 ? '#9A3412' : '#166534', a: esc(c.customer) + ' · ' + esc(c.item), b: 'Ready' + (readyDays(c) >= 1 ? ' for ' + readyDays(c) + (readyDays(c) === 1 ? ' day' : ' days') : '') + ', not collected · ' + esc(c.no), amt: c.balance > 0 ? money(c.balance) : 'paid', o: 1 }));
     C.list.filter(c => c.due && c.due < today() && ['Ready', 'Collected', 'Cannot fix'].indexOf(c.status) < 0).slice(0, 3).forEach(c => base.push({ k: 'cards', i: '!', bg: '#FEE2E2', fg: '#B91C1C', a: esc(c.customer) + ' · ' + esc(c.item), b: 'Late · was due ' + esc(c.due), amt: esc(c.status), o: 0 }));
     return base;
   };
+  const readyDays = c => { const l = ((c.data || {}).log || []).slice().reverse().find(x => x.s === 'Ready'); if (!l || !l.d) return 0; const t = new Date(String(l.d).replace(' ', 'T')).getTime(); return t ? Math.max(0, Math.floor((Date.now() - t) / 864e5)) : 0; };
   KL.cardsOn = on;
+  setTimeout(() => { if (!C.list) KL.kvGet('cards').then(x => { if (x && !C.list) { C.list = x; if (S.tab === 'cards' || S.tab === 'dash') render(true); } }).catch(() => {}); }, 800);
   async function load() {
     try { const r = await api('cards', { op: 'list' }); if (r.ok) { C.list = r.cards; C.flow = r.flow || C.flow; KL.kvSet('cards', r.cards).catch(() => {}); } else toast(errText(r.error)); }
     catch (e) { if (!C.list) { try { C.list = await KL.kvGet('cards'); } catch (x) { /* none */ } } }
@@ -73,11 +75,12 @@
   function ticketHTML(c, preview) {
     const s = cfg(), c1 = s.c1 || '#7A1F3D', d = c.data || {}, R = (a, b) => b ? '<tr><td style="padding:4px 6px;color:#5B6B78;width:38%;vertical-align:top">' + a + '</td><td style="padding:4px 6px">' + b + '</td></tr>' : '';
     const parts = d.parts || [], price = r2((+d.service || 0) + sum(parts, p => p.q * p.u)), paid = r2(c.paid || 0), bal = r2(price - paid);
+    const ph = d.photo || (c.no && C.ph[c.no]) || '';
     let h = '<div class="paper" style="position:relative;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;font-size:12.5px;color:#1F2933;overflow:hidden">';
     if (preview) h += '<div style="position:absolute;top:10px;right:-36px;transform:rotate(35deg);background:#FFF0D2;color:#7A4B00;font-weight:800;font-size:11px;padding:3px 42px">PREVIEW</div>';
     h += '<div style="display:flex;gap:10px;align-items:center"><img src="' + KL.logoSrc() + '" alt="" style="width:48px;height:48px;object-fit:contain"><div style="flex:1"><b style="color:' + esc(c1) + '">' + esc(bizName()) + '</b><div style="font-size:11px;color:#5B6B78">' + esc([s.location, s.phone].filter(Boolean).join(' · ')) + '</div></div>' +
       '<div style="text-align:right"><b style="color:' + esc(c1) + '">' + (c.kind === 'Tailoring' ? 'SEWING ORDER' : 'REPAIR TICKET') + '</b><div style="font-size:20px;font-weight:800">' + esc(c.no || 'New') + '</div></div></div>' +
-      '<div style="height:3px;background:' + esc(c1) + ';margin:8px 0"></div><table style="width:100%;border-collapse:collapse">' +
+      '<div style="height:3px;background:' + esc(c1) + ';margin:8px 0"></div>' + (ph ? '<div style="text-align:center;margin:0 0 8px"><img src="' + ph + '" alt="" style="max-width:100%;max-height:150px;border-radius:8px"></div>' : '') + '<table style="width:100%;border-collapse:collapse">' +
       R('Customer', '<b>' + esc(c.customer) + '</b>' + (c.phone ? ' · ' + esc(c.phone) : '')) + R('Received', esc(c.date || today())) + R(c.kind === 'Tailoring' ? 'Garment' : 'Item', '<b>' + esc(c.item) + '</b>' + (c.kind === 'Tailoring' && d.qty > 1 ? ' × ' + d.qty : '')) +
       (c.kind === 'Tailoring' ? R('Fabric', esc(d.fabric || '')) + R('Style', esc(d.style || '')) + R('Fitting', esc(d.fitting || '')) : R('IMEI / serial', esc(d.imei || '')) + R('Problem', esc(d.problem || '')) + R('Left with us', esc(d.accessories || '')) + R('Condition', esc(d.condition || ''))) +
       R('Ready by', '<b>' + esc(c.due || 'we will call you') + '</b>') + '</table>';
@@ -90,7 +93,7 @@
 
   /* ---------- new / edit ---------- */
   ACT.cfNew = d => { C.e = { kind: d.k, no: '', customer: '', phone: '', item: '', due: '', service: '', parts: [], cash: '', momo: '', imei: '', problem: '', accessories: '', condition: '', tech: '', garment: '', qty: 1, fabric: "Customer's own", style: '', fitting: '', note: '', meas: {} }; form(); };
-  ACT.cfEdit = () => { const v = C.v; C.e = Object.assign({ kind: v.kind, no: v.no, customer: v.customer, phone: v.phone, item: v.item, due: v.due, cash: '', momo: '', parts: (v.data.parts || []).map(p => Object.assign({}, p)), meas: Object.assign({}, v.data.meas || {}) }, v.data, { service: v.data.service || '' }); form(); };
+  ACT.cfEdit = () => { const v = C.v; C.e = Object.assign({ photo: C.ph[v.no] || '', kind: v.kind, no: v.no, customer: v.customer, phone: v.phone, item: v.item, due: v.due, cash: '', momo: '', parts: (v.data.parts || []).map(p => Object.assign({}, p)), meas: Object.assign({}, v.data.meas || {}) }, v.data, { service: v.data.service || '' }); form(); };
   const custs = () => KL.derived().customers.filter(c => kk(c.name) !== kk(KL.WALKIN));
   const products = () => ((S.lists && S.lists.products) || (S.cache && S.cache.products) || []);
   function form() {
@@ -112,7 +115,7 @@
     h += '<div class="picker"><div>' + inp('cfsv', tl ? 'Sewing price (GH₵)' : 'Service charge (GH₵)', e.service, tl ? '' : 'leave empty if not checked yet', 'number') + '</div><div>' + inp('cfdue', 'Ready by', e.due, '', 'date') + '</div></div>' +
       '<p style="text-align:right;font-weight:800;font-size:17px;margin:8px 0 0" id="cftot"></p>' +
       '<div class="picker"><div>' + inp('cfcash', e.no ? 'Pay now: cash' : 'Deposit: cash', e.cash, '0', 'number') + '</div><div>' + inp('cfmomo', e.no ? 'Pay now: MoMo' : 'Deposit: MoMo', e.momo, '0', 'number') + '</div></div>' +
-      inp('cfnote', 'Note (only for you)', e.note, '') + '<br><button class="btn primary block" data-act="cfPreview">Preview</button>';
+      inp('cfnote', 'Note (only for you)', e.note, '') + '<label>Photo of the ' + (tl ? 'cloth' : 'phone or laptop') + '</label>' + (e.photo ? '<img src="' + e.photo + '" alt="" style="width:100%;max-width:220px;border-radius:10px;display:block;margin:4px 0">' : '') + '<label class="btn sm block" style="text-align:center;margin-top:4px">' + (e.photo ? 'Retake photo' : 'Take photo') + '<input id="cfph" type="file" accept="image/*" capture="environment" style="display:none"></label><br><button class="btn primary block" data-act="cfPreview">Preview</button>';
     sheet(h); total();
   }
   function read() {
@@ -147,6 +150,18 @@
       '<div class="row" style="margin-top:12px"><button class="btn grow" data-act="cfBack">Edit</button><button class="btn primary grow" data-act="cfSave">Confirm and save</button></div>');
   };
   ACT.cfBack = () => form();
+  async function thumb(file) {
+    const bmp = await createImageBitmap(file); let max = 300, q = 0.6, out = '';
+    for (let k = 0; k < 6; k++) {
+      const sc = Math.min(1, max / Math.max(bmp.width, bmp.height)), cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(bmp.width * sc)); cv.height = Math.max(1, Math.round(bmp.height * sc));
+      cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height); out = cv.toDataURL('image/jpeg', q); if (out.length <= 22000) break; max -= 40; q -= 0.06;
+    }
+    return out;
+  }
+  document.addEventListener('change', async ev => {
+    if (!ev.target || ev.target.id !== 'cfph' || !C.e) return; const f = ev.target.files && ev.target.files[0]; if (!f) return;
+    try { read(); C.e.photo = await thumb(f); C.e.photoNew = true; form(); } catch (e) { toast('Could not use that photo. Try again.'); }
+  });
   ACT.cfSave = async (d, btn) => {
     const e = C.e; btn.disabled = true; btn.textContent = 'Saving…';
     const body = { op: 'save', no: e.no, kind: e.kind, customer: e.customer, phone: e.phone, item: e.item, due: e.due, service: +e.service || 0, cash: +e.cash || 0, momo: +e.momo || 0, note: e.note };
@@ -154,6 +169,7 @@
     try {
       const r = await api('cards', body);
       if (!r.ok) { toast(errText(r.error)); btn.disabled = false; btn.textContent = 'Confirm and save'; return; }
+      if (e.photoNew && e.photo) { try { const pr = await api('cards', { op: 'photo', no: r.no, photo: e.photo }); if (pr.ok) { C.ph[r.no] = e.photo; KL.kvSet('cphotos', C.ph).catch(() => {}); } else toast('Saved, but the photo did not upload.'); } catch (x) { toast('Saved, but the photo did not upload.'); } }
       toast((e.no ? 'Saved ' : 'Job card ') + r.no); C.e = null; await load(); view(r.no); KL.refreshCache && KL.refreshCache();
     } catch (x) { toast('Needs internet to save'); btn.disabled = false; btn.textContent = 'Confirm and save'; }
   };
@@ -162,6 +178,9 @@
   ACT.cfOpen = d => view(d.no);
   function view(no) {
     const c = (C.list || []).find(x => x.no === no); if (!c) return; C.v = c;
+    if (c.hasPhoto && !C.ph[c.no]) {
+      KL.kvGet('cphotos').then(m => { if (m && m[c.no] && !C.ph[c.no]) { C.ph[c.no] = m[c.no]; if (C.v && C.v.no === c.no) view(c.no); } else if (!C.ph[c.no] && navigator.onLine) api('cards', { op: 'photoGet', no: c.no }).then(r => { if (r.ok && r.photo) { C.ph[c.no] = r.photo; KL.kvSet('cphotos', C.ph).catch(() => {}); if (C.v && C.v.no === c.no) view(c.no); } }).catch(() => {}); }).catch(() => {});
+    }
     const flow = C.flow[c.kind] || C.flow.Repair, log = (c.data.log || []).slice().reverse();
     sheet('<h2>' + esc(c.no) + ' · ' + esc(c.customer) + ' ' + badge(c.status) + '</h2>' +
       '<div class="chips">' + flow.map(s => '<button class="chip ' + (s === c.status ? 'on' : '') + '" data-act="cfSt" data-s="' + esc(s) + '">' + esc(s) + '</button>').join('') + '</div>' +
@@ -221,7 +240,7 @@
       return await new Promise(r => cv.toBlob(r, 'image/png'));
     } finally { host.remove(); }
   }
-  const tkKey = c => [c.no, c.status, c.balance, c.paid, JSON.stringify(c.data || {}).length].join('|');
+  const tkKey = c => [c.no, c.status, c.balance, c.paid, JSON.stringify(c.data || {}).length, C.ph[c.no] ? 1 : 0].join('|');
   function ticketReady(c) {
     const k = tkKey(c); C.pic = C.pic || {};
     if (C.pic.key === k && C.pic.p) return C.pic.p;

@@ -162,13 +162,17 @@
     if (S.tab === 'ctrl') m.innerHTML = ctrlHTML();
     if (S.tab === 'dash' && isOwner() && KL.hasMod('stock') && !B.stock && !B.stockAsked && navigator.onLine) { B.stockAsked = 1; loadStock(); }
     if (S.tab === 'dash' && isOwner() && KL.hasMod('jobs') && KL.homeHas('jobs') && !B.jobs && !B.jobsAsked && navigator.onLine) { B.jobsAsked = 1; loadJobs(); }
+    if (S.tab === 'dash' && isOwner() && !B.loans && !B.loansAsked) { B.loansAsked = 1; if (navigator.onLine) loadLoans(); else KL.kvGet('loans').then(c => { if (c) { B.loans = c; render(true); } }).catch(() => {}); }
   });
   // low stock goes into "Needs your attention" on Home
-  KL.moreAttention = () => (B.stock || []).filter(p => p.low).slice(0, 4).map(p => ({ k: 'money', i: '▣', bg: '#FEE2E2', fg: '#B91C1C', a: esc(p.name), b: 'Low stock', amt: p.level + ' left', o: 1 }));
+  KL.moreAttention = () => (B.stock || []).filter(p => p.low).slice(0, 4).map(p => ({ k: 'money', i: '▣', bg: '#FEE2E2', fg: '#B91C1C', a: esc(p.name), b: 'Low stock', amt: p.level + ' left', o: 1 })).concat(isOwner() ? (B.loans || []).filter(x => x.balance > 0.004 && x.due && x.due <= dueSoon()).slice(0, 4).map(x => ({ k: 'money', i: '₵', bg: '#FFF7ED', fg: '#9A3412', a: esc(x.person), b: (x.dir === 'gave' ? 'Should pay me' : 'I must pay') + ' · ' + (x.due < today() ? 'late since ' : 'due ') + esc(x.due), amt: money(x.balance), o: 1 })) : []);
 
   /* ---------- JOBS ---------- */
+  async function jobsFromCopy() {
+    try { const c = await KL.kvGet('jobs'); if (c && c.jobs && !B.jobs) { B.jobs = c.jobs; B.cats = c.cats || B.cats; B.stages = c.stages || B.stages; B.crewNames = c.crew || B.crewNames; B.types = c.types || B.types; B.jobsAt = c.at || 0; } } catch (e) { /* none */ }
+  }
   async function loadJobs() {
-    try { const r = await api('biz', { op: 'jobs' }); if (r.ok) { B.jobs = r.jobs; B.cats = r.cats; B.stages = r.stages; B.crewNames = r.crew; B.types = r.types || B.types; } else toast(errText(r.error)); } catch (e) { toast('Needs internet'); }
+    try { const r = await api('biz', { op: 'jobs' }); if (r.ok) { B.jobs = r.jobs; B.cats = r.cats; B.stages = r.stages; B.crewNames = r.crew; B.types = r.types || B.types; B.jobsAt = Date.now(); KL.kvSet('jobs', { jobs: r.jobs, cats: r.cats, stages: r.stages, crew: r.crew, types: r.types, at: B.jobsAt }).catch(() => {}); } else toast(errText(r.error)); } catch (e) { if (!B.jobs) await jobsFromCopy(); if (!B.jobs) toast('No saved copy yet. Open Jobs once with internet.'); }
     if (S.tab === 'jobs' || S.tab === 'dash') render(true);
   }
   async function loadCrew() {
@@ -193,7 +197,9 @@
     let h = '<div class="chips" style="margin-top:6px"><button class="chip ' + (B.jview !== 'crew' ? 'on' : '') + '" data-act="jView" data-k="jobs">Jobs</button><button class="chip ' + (B.jview === 'crew' ? 'on' : '') + '" data-act="jView" data-k="crew">Workers &amp; subcontractors</button></div>';
     if (B.jview === 'crew') return h + crewHTML();
     h += '<button class="btn primary block" data-act="jNew" style="margin-top:6px">+ New job</button><p class="small muted">Tip: open an estimate or invoice and tap <b>Start job</b>.</p>';
-    if (!B.jobs) return h + '<div class="empty">' + (navigator.onLine ? 'Loading…' : 'Needs internet.') + '</div>';
+    if (!B.jobs && !B.jobsTried) { B.jobsTried = 1; jobsFromCopy().then(() => { if (B.jobs && S.tab === 'jobs') render(true); }); }
+    if (!B.jobs) return h + '<div class="empty">' + (navigator.onLine ? 'Loading…' : 'No saved copy yet. Open Jobs once with internet.') + '</div>';
+    if (!navigator.onLine && B.jobsAt) h += '<p class="small muted" style="margin:4px 0">No internet. Showing the copy saved at ' + new Date(B.jobsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '.</p>';
     const open = B.jobs.filter(j => j.stage !== 'Completed');
     h += '<div class="stats" style="grid-template-columns:repeat(3,1fr)"><div class="stat"><span>Running</span><b>' + open.length + '</b></div><div class="stat"><span>Value</span><b style="font-size:15px">' + money(sum(open, j => j.value)) + '</b></div><div class="stat"><span>Profit so far</span><b style="font-size:15px" class="green">' + money(sum(B.jobs, j => j.value - j.costTotal)) + '</b></div></div>';
     if (!B.jobs.length) return h + '<div class="empty">No jobs yet.</div>';
@@ -771,7 +777,7 @@
   };
 
   /* ---------- MONEY: stock, expenses, profit ---------- */
-  function loadMoney() { if (B.mtab === 'stock') loadStock(); else if (B.mtab === 'exp') loadExp(); else if (B.mtab === 'inc') loadInc(); else loadProfit(); }
+  function loadMoney() { if (B.mtab === 'loans') loadLoans(); else if (B.mtab === 'stock') loadStock(); else if (B.mtab === 'exp') loadExp(); else if (B.mtab === 'inc') loadInc(); else loadProfit(); }
   async function loadInc() { try { const r = await api('more', { op: 'inc', month: B.expMonth }); if (r.ok) B.inc = r.income; } catch (e) { /* offline */ } if (S.tab === 'money') render(true); }
   KL.B = B;
   KL.reloadMoney = () => { B.inc = null; B.profit = null; loadMoney(); };
@@ -780,10 +786,65 @@
   async function loadProfit() { try { const r = await api('biz', { op: 'profit', month: B.expMonth }); if (r.ok) B.profit = r; else toast(errText(r.error)); } catch (e) { /* offline */ } if (S.tab === 'money') render(true); }
   ACT.mTab = d => { B.mtab = d.k; render(true); loadMoney(); };
   document.addEventListener('change', ev => { if (ev.target.id === 'mmonth') { B.expMonth = ev.target.value || today().slice(0, 7); B.exp = null; B.inc = null; B.profit = null; render(true); loadMoney(); } });
+  /* ---------- MONEY GIVEN OUT OR BORROWED (owner only) ---------- */
+  async function loadLoans() {
+    try { const r = await api('loans', { op: 'list' }); if (r.ok) { B.loans = r.loans; B.loansAt = Date.now(); KL.kvSet('loans', r.loans).catch(() => {}); } else toast(errText(r.error)); }
+    catch (e) { if (!B.loans) { try { B.loans = await KL.kvGet('loans'); } catch (x) { /* none */ } } }
+    if (S.tab === 'money' || S.tab === 'dash') render(true);
+  }
+  const dueSoon = () => new Date(Date.now() + 3 * 864e5).toISOString().slice(0, 10);
+  function loansHTML() {
+    if (!B.loans && !B.loansAsked) { B.loansAsked = 1; loadLoans(); }
+    let h = '<button class="btn primary block" data-act="lnNew" style="margin:8px 0">+ Money given or borrowed</button>';
+    const l = B.loans; if (!l) return h + '<div class="empty">' + (navigator.onLine ? 'Loading…' : 'Open this once with internet.') + '</div>';
+    const open = l.filter(x => x.balance > 0.004).sort((a, b) => (a.due || '9999') < (b.due || '9999') ? -1 : 1), gave = open.filter(x => x.dir === 'gave'), bor = open.filter(x => x.dir === 'borrowed');
+    h += '<div class="row" style="gap:8px;margin-bottom:8px"><div class="card grow"><div class="small muted">People owe me</div><b>' + money(sum(gave, x => x.balance)) + '</b></div><div class="card grow"><div class="small muted">I owe</div><b>' + money(sum(bor, x => x.balance)) + '</b></div></div>';
+    if (!open.length) return h + '<div class="empty">Nothing outstanding.</div>';
+    return h + open.map(x => '<button class="card" style="display:block;width:100%;text-align:left;margin-bottom:6px" data-act="lnOpen" data-id="' + esc(x.id) + '"><div class="row between"><b>' + esc(x.person) + '</b><b class="' + (x.dir === 'gave' ? '' : 'red') + '">' + money(x.balance) + '</b></div><div class="small muted">' + (x.dir === 'gave' ? 'I gave' : 'I borrowed') + ' · ' + (x.due ? 'due ' + esc(x.due) : 'no date set') + (x.due && x.due < today() ? ' <span class="red"><b>LATE</b></span>' : '') + '</div></button>').join('');
+  }
+  ACT.lnNew = () => lnForm({ dir: 'gave', person: '', phone: '', amount: '', date: today(), due: '', note: '' });
+  ACT.lnEdit = d => { const x = (B.loans || []).find(y => y.id === d.id); if (x) lnForm(x); };
+  function lnForm(x) {
+    B.lnE = x;
+    sheet('<h2>' + (x.id ? 'Edit' : 'New') + ' · money given or borrowed</h2><div class="seg"><button class="' + (x.dir === 'gave' ? 'on' : '') + '" data-act="lnDir" data-d="gave">I gave</button><button class="' + (x.dir === 'borrowed' ? 'on' : '') + '" data-act="lnDir" data-d="borrowed">I borrowed</button></div>' +
+      '<label>Person</label><input id="lnp" value="' + esc(x.person) + '" autocomplete="off"><label>Phone</label><input id="lnph" type="tel" value="' + esc(x.phone) + '">' +
+      '<div class="picker"><div><label>Amount (GH₵)</label><input id="lna" type="number" inputmode="decimal" value="' + esc(x.amount) + '"></div><div><label>Date</label><input id="lnd" type="date" value="' + esc(x.date) + '"></div></div>' +
+      '<label>Promised to pay on</label><input id="lndue" type="date" value="' + esc(x.due) + '"><label>Note</label><input id="lnn" value="' + esc(x.note) + '" placeholder="Example: school fees, small help"><br>' +
+      '<button class="btn primary block" data-act="lnSave">Save</button><button class="btn block" style="margin-top:6px" data-act="close">Cancel</button>');
+  }
+  const lnRead = () => { const x = B.lnE, g = id => ($('#' + id) || {}).value; x.person = (g('lnp') || '').trim(); x.phone = (g('lnph') || '').trim(); x.amount = g('lna'); x.date = g('lnd') || today(); x.due = g('lndue') || ''; x.note = (g('lnn') || '').trim(); return x; };
+  ACT.lnDir = d => { lnRead(); B.lnE.dir = d.d; lnForm(B.lnE); };
+  ACT.lnSave = async (d, btn) => {
+    const x = lnRead(); if (!x.person) { toast('Type the person\'s name'); return; } if (!(+x.amount > 0)) { toast('Type the amount'); return; }
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try { const r = await api('loans', { op: 'save', id: x.id, person: x.person, phone: x.phone, dir: x.dir, amount: +x.amount, date: x.date, due: x.due, note: x.note, today: today() }); if (!r.ok) { toast(errText(r.error)); btn.disabled = false; btn.textContent = 'Save'; return; } B.loans = r.loans; KL.kvSet('loans', r.loans).catch(() => {}); closeSheet(); toast('Saved'); render(true); }
+    catch (e) { toast('Needs internet to save'); btn.disabled = false; btn.textContent = 'Save'; }
+  };
+  ACT.lnOpen = d => {
+    const x = (B.loans || []).find(y => y.id === d.id); if (!x) return; B.lnV = x;
+    sheet('<h2>' + esc(x.person) + '</h2><p class="muted" style="margin:0">' + (x.dir === 'gave' ? 'I gave ' : 'I borrowed ') + money(x.amount) + ' on ' + esc(x.date) + (x.due ? ' · due ' + esc(x.due) : '') + '</p>' +
+      '<p style="font-size:20px;font-weight:800;margin:8px 0">' + (x.balance > 0.004 ? 'Balance ' + money(x.balance) : 'Fully paid') + '</p>' + (x.note ? '<p class="small">' + esc(x.note) + '</p>' : '') +
+      (x.pays.length ? '<h3 style="margin:10px 0 4px">Payments</h3>' + x.pays.map(p => '<div class="row between small" style="padding:3px 0;border-bottom:1px solid var(--line)"><span>' + esc(p.date) + (p.note ? ' · ' + esc(p.note) : '') + '</span><b>' + money(p.amount) + '</b></div>').join('') : '') +
+      '<div style="display:grid;gap:8px;margin-top:12px">' + (x.balance > 0.004 ? '<button class="btn primary block" data-act="lnPay">Add a payment</button>' : '') +
+      (x.dir === 'gave' && x.phone && x.balance > 0.004 ? '<button class="btn block" style="border-color:#16A34A;color:#16A34A" data-act="lnRemind">Remind on WhatsApp</button>' : '') +
+      '<div class="row" style="gap:8px"><button class="btn grow" data-act="lnEdit" data-id="' + esc(x.id) + '">Edit</button><button class="btn danger grow" data-act="lnDel">Delete</button></div><button class="btn block" data-act="close">Close</button></div>');
+  };
+  ACT.lnPay = () => { const x = B.lnV; sheet('<h2>Payment from ' + esc(x.person) + '</h2><p class="muted" style="margin:0">Balance ' + money(x.balance) + '</p><label>Amount (GH₵)</label><input id="lpa" type="number" inputmode="decimal"><label>Date</label><input id="lpd" type="date" value="' + today() + '"><label>Note</label><input id="lpn"><br><button class="btn primary block" data-act="lnPaySave">Save payment</button><button class="btn block" style="margin-top:6px" data-act="close">Cancel</button>'); };
+  ACT.lnPaySave = async (d, btn) => {
+    const a = +$('#lpa').value; if (!(a > 0)) { toast('Type the amount'); return; }
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try { const r = await api('loans', { op: 'pay', id: B.lnV.id, amount: a, date: $('#lpd').value || today(), note: $('#lpn').value.trim(), today: today() }); if (!r.ok) { toast(errText(r.error)); btn.disabled = false; btn.textContent = 'Save payment'; return; } B.loans = r.loans; KL.kvSet('loans', r.loans).catch(() => {}); closeSheet(); toast('Payment saved'); render(true); }
+    catch (e) { toast('Needs internet to save'); btn.disabled = false; btn.textContent = 'Save payment'; }
+  };
+  ACT.lnRemind = () => { const x = B.lnV; window.open(KL.waLink(x.phone, 'Hello ' + x.person + ', a gentle reminder about the ' + money(x.balance) + ' balance' + (x.due ? ' we agreed to be paid by ' + x.due : '') + '. Thank you.'), '_blank', 'noopener'); };
+  ACT.lnDel = () => sheet('<h2>Delete this record?</h2><p class="small">' + esc(B.lnV.person) + ' · ' + money(B.lnV.amount) + '. Its payments are removed too.</p><button class="btn danger block" data-act="lnDelGo">Yes, delete</button><button class="btn block" style="margin-top:6px" data-act="close">Cancel</button>');
+  ACT.lnDelGo = async (d, btn) => { btn.disabled = true; try { const r = await api('loans', { op: 'delete', id: B.lnV.id }); if (!r.ok) { toast(errText(r.error)); btn.disabled = false; return; } B.loans = r.loans; KL.kvSet('loans', r.loans).catch(() => {}); closeSheet(); toast('Deleted'); render(true); } catch (e) { toast('Needs internet'); btn.disabled = false; } };
+
   function moneyHTML() {
-    const tabs = [['stock', 'Stock', 'stock'], ['exp', 'Expenses', 'money'], ['inc', 'Other income', 'income'], ['profit', 'Profit', 'money']].filter(x => KL.hasMod(x[2]));
+    const tabs = [['stock', 'Stock', 'stock'], ['exp', 'Expenses', 'money'], ['inc', 'Other income', 'income'], ['profit', 'Profit', 'money'], ['loans', 'Money given', 'owner']].filter(x => x[2] === 'owner' ? isOwner() : KL.hasMod(x[2]));
     if (!tabs.some(x => x[0] === B.mtab)) B.mtab = tabs.length ? tabs[0][0] : 'stock';
     let h = '<div class="chips" style="margin-top:6px">' + tabs.map(x => '<button class="chip ' + (B.mtab === x[0] ? 'on' : '') + '" data-act="mTab" data-k="' + x[0] + '">' + x[1] + '</button>').join('') + '</div>';
+    if (B.mtab === 'loans') return h + loansHTML();
     if (B.mtab !== 'stock') h += '<label>Month</label><input id="mmonth" type="month" value="' + esc(B.expMonth) + '">';
     if (B.mtab === 'stock') {
       h += '<div class="row" style="gap:8px;margin:6px 0"><button class="btn primary grow" data-act="sIn">+ Stock in</button><button class="btn grow" data-act="sCount">Count stock</button></div>' +
